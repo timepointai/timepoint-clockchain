@@ -14,6 +14,8 @@ VALID_EDGE_TYPES = {"causes", "contemporaneous", "same_location", "thematic"}
 
 
 class GraphManager:
+    BUNDLED_SEEDS_PATH = Path("/app/seeds/seeds.json")
+
     def __init__(self, data_dir: str = "./data"):
         self.data_dir = Path(data_dir)
         self.graph_path = self.data_dir / "graph.json"
@@ -31,6 +33,11 @@ class GraphManager:
             elif self.seeds_path.exists():
                 logger.info("Initializing graph from seeds at %s", self.seeds_path)
                 with open(self.seeds_path) as f:
+                    seeds = json.load(f)
+                self._load_seeds(seeds)
+            elif self.BUNDLED_SEEDS_PATH.exists():
+                logger.info("Volume empty, loading bundled seeds from %s", self.BUNDLED_SEEDS_PATH)
+                with open(self.BUNDLED_SEEDS_PATH) as f:
                     seeds = json.load(f)
                 self._load_seeds(seeds)
             else:

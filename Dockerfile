@@ -14,6 +14,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY app/ app/
 COPY data/ data/
+COPY data/seeds.json /app/seeds/seeds.json
 
 RUN chown -R appuser:appuser /app
 USER appuser
