@@ -12,14 +12,22 @@ class FlashClient:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"X-Service-Key": self.service_key},
-            timeout=180.0,
+            timeout=300.0,
         )
 
-    async def generate_sync(self, query: str, preset: str = "balanced") -> dict:
+    async def generate_sync(
+        self,
+        query: str,
+        preset: str = "balanced",
+        request_context: dict | None = None,
+    ) -> dict:
         logger.info("Flash generate: query=%r preset=%s", query, preset)
+        body: dict = {"query": query, "preset": preset}
+        if request_context:
+            body["request_context"] = request_context
         resp = await self._client.post(
             "/api/v1/timepoints/generate/sync",
-            json={"query": query, "preset": preset},
+            json=body,
         )
         resp.raise_for_status()
         return resp.json()
