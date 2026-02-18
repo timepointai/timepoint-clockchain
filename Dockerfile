@@ -15,9 +15,9 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY app/ app/
 COPY data/ data/
 COPY data/seeds.json /app/seeds/seeds.json
+COPY entrypoint.sh /app/entrypoint.sh
 
-RUN chown -R appuser:appuser /app
-USER appuser
+RUN chown -R appuser:appuser /app && chmod +x /app/entrypoint.sh
 
 EXPOSE 8080
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}
+ENTRYPOINT ["/app/entrypoint.sh"]
