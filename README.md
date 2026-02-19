@@ -31,6 +31,7 @@ timepoint-clockchain/
 │   ├── seeds.json           # 5 seed historical events
 │   └── graph.json           # Persisted graph (created on first run)
 ├── tests/
+├── .env.example          # Environment variable template
 ├── Dockerfile
 ├── railway.json
 └── pyproject.toml
@@ -40,15 +41,12 @@ timepoint-clockchain/
 
 ```bash
 pip install -e ".[dev]"
+cp .env.example .env   # then fill in your keys
 ```
 
 ## Running
 
 ```bash
-# Set required env vars
-export SERVICE_API_KEY=your-key
-export FLASH_SERVICE_KEY=your-flash-key
-
 # Start the service
 uvicorn app.main:app --port 8080
 ```
