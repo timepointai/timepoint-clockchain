@@ -3,11 +3,13 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from google import genai
+import httpx
 
 from app.core.graph import GraphManager
 
 logger = logging.getLogger("clockchain.expander")
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 EXPANSION_PROMPT = """You are a historian. Given this historical event, suggest 3-5 closely related historical events.
 
@@ -37,11 +39,13 @@ class GraphExpander:
     def __init__(
         self,
         graph_manager: GraphManager,
-        google_api_key: str,
+        api_key: str,
+        model: str = "google/gemini-2.0-flash-001",
         interval_seconds: int = 300,
     ):
         self.gm = graph_manager
-        self.api_key = google_api_key
+        self.api_key = api_key
+        self.model = model
         self.interval = interval_seconds
 
     async def start(self):
@@ -88,15 +92,23 @@ class GraphExpander:
             one_liner=node.get("one_liner", ""),
         )
 
-        client = genai.Client(api_key=self.api_key)
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                OPENROUTER_URL,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
-        text = response.text.strip()
-        # Strip markdown code fences if present
+        text = data["choices"][0]["message"]["content"].strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             if text.endswith("```"):

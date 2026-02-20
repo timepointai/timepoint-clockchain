@@ -1,7 +1,7 @@
 import json
 import os
 import shutil
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -9,7 +9,7 @@ from app.core.graph import GraphManager
 from app.workers.expander import GraphExpander
 
 
-MOCK_GEMINI_RESPONSE = [
+MOCK_RESPONSE = [
     {
         "name": "Roman Civil War",
         "year": -49,
@@ -40,6 +40,24 @@ MOCK_GEMINI_RESPONSE = [
     },
 ]
 
+OPENROUTER_RESPONSE = {
+    "choices": [{"message": {"content": json.dumps(MOCK_RESPONSE)}}]
+}
+
+
+def _patch_httpx():
+    """Patch httpx.AsyncClient used as async context manager."""
+    resp = MagicMock()
+    resp.json.return_value = OPENROUTER_RESPONSE
+
+    inner = MagicMock()
+    inner.post = AsyncMock(return_value=resp)
+
+    cm = AsyncMock()
+    cm.__aenter__.return_value = inner
+
+    return patch("app.workers.expander.httpx.AsyncClient", return_value=cm)
+
 
 @pytest.fixture()
 async def graph_manager(tmp_path):
@@ -52,16 +70,9 @@ async def graph_manager(tmp_path):
 
 @pytest.mark.asyncio
 async def test_expander_generates_related_events(graph_manager):
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(MOCK_GEMINI_RESPONSE)
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
     initial_count = graph_manager.graph.number_of_nodes()
 
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx():
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 
@@ -72,16 +83,9 @@ async def test_expander_generates_related_events(graph_manager):
 
 @pytest.mark.asyncio
 async def test_expander_creates_edges(graph_manager):
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(MOCK_GEMINI_RESPONSE)
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
     initial_edges = graph_manager.graph.number_of_edges()
 
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx():
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 
@@ -90,14 +94,7 @@ async def test_expander_creates_edges(graph_manager):
 
 @pytest.mark.asyncio
 async def test_expander_sets_correct_attributes(graph_manager):
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(MOCK_GEMINI_RESPONSE)
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx():
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 

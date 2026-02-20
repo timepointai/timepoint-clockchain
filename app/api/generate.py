@@ -32,8 +32,8 @@ async def generate_moment(
     try:
         from app.workers.judge import ContentJudge
         settings = get_settings()
-        if settings.GOOGLE_API_KEY:
-            judge = ContentJudge(settings.GOOGLE_API_KEY)
+        if settings.OPENROUTER_API_KEY:
+            judge = ContentJudge(settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL)
             verdict = await judge.screen(body.query)
             if verdict == "reject":
                 raise HTTPException(status_code=400, detail="Query rejected by content judge")

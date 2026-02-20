@@ -34,10 +34,12 @@ async def lifespan(application: FastAPI):
 
     # Expander (gated by feature flag)
     expander_task = None
-    if settings.EXPANSION_ENABLED and settings.GOOGLE_API_KEY:
+    if settings.EXPANSION_ENABLED and settings.OPENROUTER_API_KEY:
         try:
             from app.workers.expander import GraphExpander
-            expander = GraphExpander(gm, settings.GOOGLE_API_KEY)
+            expander = GraphExpander(
+                gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+            )
             expander_task = asyncio.create_task(expander.start())
             logger.info("Graph expander started")
         except ImportError:

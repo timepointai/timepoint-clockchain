@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
     PORT: int = 8080
-    GOOGLE_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-001"
     EXPANSION_ENABLED: bool = False
     DAILY_CRON_ENABLED: bool = False
     ADMIN_KEY: str = ""

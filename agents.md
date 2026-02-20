@@ -19,16 +19,16 @@ HTTP client for the Flash scene-generation service. Not a background loop — ca
 
 **Class:** `GraphExpander`
 
-Autonomous graph-growth loop. Picks frontier nodes (low edge-count) and asks Gemini to suggest 3–5 related historical events, then adds them to the graph with edges back to the source.
+Autonomous graph-growth loop. Picks frontier nodes (low edge-count) and asks an LLM via OpenRouter to suggest 3–5 related historical events, then adds them to the graph with edges back to the source.
 
 - Runs on a configurable interval (default 300s)
 - Selects frontier nodes via `GraphManager.get_frontier_nodes(threshold=3)`
-- Sends a structured prompt to `gemini-2.0-flash` and parses the JSON response
+- Sends a structured prompt via OpenRouter's chat completions API and parses the JSON response
 - New nodes are created at Layer 1 (public, with metadata)
-- Edges are created with the type suggested by Gemini (`causes`, `contemporaneous`, `same_location`, or `thematic`)
+- Edges are created with the type suggested by the model (`causes`, `contemporaneous`, `same_location`, or `thematic`)
 - Saves the graph after each expansion cycle
 
-**Config:** `EXPANSION_ENABLED`, `GOOGLE_API_KEY`
+**Config:** `EXPANSION_ENABLED`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`
 
 ## Judge (`app/workers/judge.py`)
 
@@ -36,14 +36,14 @@ Autonomous graph-growth loop. Picks frontier nodes (low edge-count) and asks Gem
 
 LLM-based content moderation gate. Called inline before scene generation to screen user queries.
 
-- Sends the query to `gemini-2.0-flash` with a classification prompt
+- Sends the query via OpenRouter's chat completions API with a classification prompt
 - Returns one of three verdicts:
   - `approve` — safe historical topic
   - `sensitive` — historically significant but mature; approved with disclaimer
   - `reject` — harmful, hateful, or not a genuine historical query
 - Not a background loop — invoked per-request
 
-**Config:** `GOOGLE_API_KEY`
+**Config:** `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`
 
 ## Daily Worker (`app/workers/daily.py`)
 
@@ -69,4 +69,4 @@ Not a standalone worker, but runs automatically inside `GraphManager.add_node()`
 | `same_location` | Matching country + region + city |
 | `thematic` | Overlapping tags |
 
-`causes` edges are **not** auto-linked — they are only created manually or by the Expander when Gemini suggests a causal relationship.
+`causes` edges are **not** auto-linked — they are only created manually or by the Expander when the LLM suggests a causal relationship.

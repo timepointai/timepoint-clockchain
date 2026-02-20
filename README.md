@@ -22,8 +22,8 @@ timepoint-clockchain/
 │   │   └── jobs.py          # In-memory job queue
 │   ├── workers/
 │   │   ├── renderer.py      # Flash HTTP client
-│   │   ├── expander.py      # Autonomous graph expansion (Gemini)
-│   │   ├── judge.py         # LLM content moderation (Gemini)
+│   │   ├── expander.py      # Autonomous graph expansion (OpenRouter)
+│   │   ├── judge.py         # LLM content moderation (OpenRouter)
 │   │   └── daily.py         # "Today in History" daily worker
 │   └── models/
 │       └── schemas.py       # Pydantic response/request models
@@ -62,7 +62,8 @@ uvicorn app.main:app --port 8080
 | `ENVIRONMENT` | No | `development` | Environment name |
 | `DEBUG` | No | `false` | Enable debug logging |
 | `PORT` | No | `8080` | Server port |
-| `GOOGLE_API_KEY` | No | | Gemini API key (for expander + judge) |
+| `OPENROUTER_API_KEY` | No | | OpenRouter API key (for expander + judge) |
+| `OPENROUTER_MODEL` | No | `google/gemini-2.0-flash-001` | Model for AI workers |
 | `EXPANSION_ENABLED` | No | `false` | Enable autonomous graph expansion |
 | `DAILY_CRON_ENABLED` | No | `false` | Enable "Today in History" worker |
 | `ADMIN_KEY` | No | | Key for bulk generation endpoint |

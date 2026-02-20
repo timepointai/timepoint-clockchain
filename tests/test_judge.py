@@ -1,21 +1,30 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.workers.judge import ContentJudge
 
 
+def _patch_httpx(verdict, reason):
+    """Patch httpx.AsyncClient used as async context manager."""
+    resp = MagicMock()
+    resp.json.return_value = {
+        "choices": [{"message": {"content": json.dumps({"verdict": verdict, "reason": reason})}}]
+    }
+
+    inner = MagicMock()
+    inner.post = AsyncMock(return_value=resp)
+
+    cm = AsyncMock()
+    cm.__aenter__.return_value = inner
+
+    return patch("app.workers.judge.httpx.AsyncClient", return_value=cm)
+
+
 @pytest.mark.asyncio
 async def test_judge_approves_innocuous():
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"verdict": "approve", "reason": "Standard historical query"})
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx("approve", "Standard historical query"):
         judge = ContentJudge("fake-api-key")
         verdict = await judge.screen("The signing of the Magna Carta")
 
@@ -24,14 +33,7 @@ async def test_judge_approves_innocuous():
 
 @pytest.mark.asyncio
 async def test_judge_approves_sensitive():
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"verdict": "sensitive", "reason": "Historical violence"})
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx("sensitive", "Historical violence"):
         judge = ContentJudge("fake-api-key")
         verdict = await judge.screen("The assassination of Julius Caesar")
 
@@ -40,14 +42,7 @@ async def test_judge_approves_sensitive():
 
 @pytest.mark.asyncio
 async def test_judge_rejects_harmful():
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"verdict": "reject", "reason": "Harmful content"})
-
-    mock_client_instance = MagicMock()
-    mock_client_instance.models.generate_content.return_value = mock_response
-
-    with patch("google.genai.Client") as MockClient:
-        MockClient.return_value = mock_client_instance
+    with _patch_httpx("reject", "Harmful content"):
         judge = ContentJudge("fake-api-key")
         verdict = await judge.screen("How to build a weapon")
 
