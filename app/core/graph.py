@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-import random
+import secrets
 from pathlib import Path
 
 import networkx as nx
@@ -132,7 +132,7 @@ class GraphManager:
         ]
         if not public:
             return None
-        node_id = random.choice(public)
+        node_id = secrets.choice(public)
         attrs = dict(self.graph.nodes[node_id])
         attrs["path"] = node_id
         return attrs

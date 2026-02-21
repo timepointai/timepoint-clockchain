@@ -220,7 +220,7 @@ class JobManager:
                 try:
                     error_msg = f"{error_msg} | response: {e.response.text[:500]}"
                 except Exception:
-                    pass
+                    logger.debug("Could not read error response body")
             job.error = error_msg or repr(e)
             job.completed_at = datetime.now(timezone.utc).isoformat()
             logger.error("Job %s failed: %s", job.id, job.error, exc_info=True)
