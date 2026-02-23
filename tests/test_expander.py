@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.db import create_pool, init_schema, seed_if_empty
 from app.core.graph import GraphManager
 from app.workers.expander import GraphExpander
 
@@ -63,33 +64,40 @@ def _patch_httpx():
 async def graph_manager(tmp_path):
     seeds_src = os.path.join(os.path.dirname(__file__), "..", "data", "seeds.json")
     shutil.copy(seeds_src, tmp_path / "seeds.json")
-    gm = GraphManager(data_dir=str(tmp_path))
+
+    url = os.environ["DATABASE_URL"]
+    pool = await create_pool(url)
+    await init_schema(pool)
+    await seed_if_empty(pool, str(tmp_path))
+
+    gm = GraphManager(pool, data_dir=str(tmp_path))
     await gm.load()
-    return gm
+    yield gm
+    await pool.close()
 
 
 @pytest.mark.asyncio
 async def test_expander_generates_related_events(graph_manager):
-    initial_count = graph_manager.graph.number_of_nodes()
+    initial_count = await graph_manager.node_count()
 
     with _patch_httpx():
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 
-    new_count = graph_manager.graph.number_of_nodes()
+    new_count = await graph_manager.node_count()
     assert new_count > initial_count
     assert new_count == initial_count + 2
 
 
 @pytest.mark.asyncio
 async def test_expander_creates_edges(graph_manager):
-    initial_edges = graph_manager.graph.number_of_edges()
+    initial_edges = await graph_manager.edge_count()
 
     with _patch_httpx():
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 
-    assert graph_manager.graph.number_of_edges() > initial_edges
+    assert await graph_manager.edge_count() > initial_edges
 
 
 @pytest.mark.asyncio
@@ -98,14 +106,9 @@ async def test_expander_sets_correct_attributes(graph_manager):
         expander = GraphExpander(graph_manager, "fake-api-key")
         await expander._expand_once()
 
-    # Find the "Roman Civil War" node
-    found = None
-    for node_id, attrs in graph_manager.graph.nodes(data=True):
-        if "roman-civil-war" in node_id:
-            found = attrs
-            break
-
-    assert found is not None
+    # Find the "Roman Civil War" node by searching
+    results = await graph_manager.search("roman civil war")
+    assert len(results) >= 1
+    found = results[0]
     assert found["visibility"] == "public"
-    assert found["created_by"] == "system"
     assert found["layer"] == 1

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.api import api_router
 from app.core.config import get_settings
+from app.core.db import create_pool, init_schema, seed_if_empty
 from app.core.graph import GraphManager
 from app.core.jobs import JobManager
 from app.workers.renderer import FlashClient
@@ -22,8 +23,13 @@ async def lifespan(application: FastAPI):
     )
     logger.info("Clockchain starting up (env=%s)", settings.ENVIRONMENT)
 
+    # Database pool
+    pool = await create_pool(settings.DATABASE_URL)
+    await init_schema(pool)
+    await seed_if_empty(pool, settings.DATA_DIR)
+
     # Graph manager
-    gm = GraphManager(data_dir=settings.DATA_DIR)
+    gm = GraphManager(pool, data_dir=settings.DATA_DIR)
     await gm.load()
     application.state.graph_manager = gm
 
@@ -63,7 +69,7 @@ async def lifespan(application: FastAPI):
         expander_task.cancel()
     if daily_task:
         daily_task.cancel()
-    await gm.save()
+    await gm.close()
     logger.info("Clockchain shutting down")
 
 
@@ -83,8 +89,8 @@ async def root():
 @app.get("/health")
 async def health():
     gm = getattr(app.state, "graph_manager", None)
-    nodes = gm.graph.number_of_nodes() if gm else 0
-    edges = gm.graph.number_of_edges() if gm else 0
+    nodes = await gm.node_count() if gm else 0
+    edges = await gm.edge_count() if gm else 0
     return {
         "status": "healthy",
         "service": "timepoint-clockchain",

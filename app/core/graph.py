@@ -1,265 +1,480 @@
-import asyncio
-import json
 import logging
-import os
-import secrets
+from datetime import datetime
 from pathlib import Path
 
-import networkx as nx
+import asyncpg
 from fastapi import Request
 
 logger = logging.getLogger("clockchain.graph")
 
 VALID_EDGE_TYPES = {"causes", "contemporaneous", "same_location", "thematic"}
 
+NODE_COLUMNS = [
+    "id", "type", "name", "year", "month", "month_num", "day", "time",
+    "country", "region", "city", "slug", "layer", "visibility",
+    "created_by", "tags", "one_liner", "figures",
+    "flash_timepoint_id", "flash_slug", "flash_share_url", "era",
+    "created_at", "published_at",
+]
+
+
+def _parse_dt(val) -> datetime | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        val = val.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(val)
+        except ValueError:
+            return None
+    return None
+
+
+def _row_to_dict(row: asyncpg.Record) -> dict:
+    d = dict(row)
+    d["path"] = d.pop("id")
+    # Convert list-like columns
+    for col in ("tags", "figures"):
+        if col in d and d[col] is not None:
+            d[col] = list(d[col])
+    # Stringify datetimes for JSON compat
+    for col in ("created_at", "published_at"):
+        if col in d:
+            d[col] = d[col].isoformat() if d[col] is not None else ""
+    return d
+
 
 class GraphManager:
-    BUNDLED_SEEDS_PATH = Path("/app/seeds/seeds.json")
-
-    def __init__(self, data_dir: str = "./data"):
+    def __init__(self, pool: asyncpg.Pool, data_dir: str = "./data"):
+        self.pool = pool
         self.data_dir = Path(data_dir)
-        self.graph_path = self.data_dir / "graph.json"
-        self.seeds_path = self.data_dir / "seeds.json"
-        self.graph = nx.DiGraph()
-        self._lock = asyncio.Lock()
 
     async def load(self):
-        async with self._lock:
-            if self.graph_path.exists():
-                logger.info("Loading graph from %s", self.graph_path)
-                with open(self.graph_path) as f:
-                    data = json.load(f)
-                self.graph = nx.node_link_graph(data, directed=True)
-            elif self.seeds_path.exists():
-                logger.info("Initializing graph from seeds at %s", self.seeds_path)
-                with open(self.seeds_path) as f:
-                    seeds = json.load(f)
-                self._load_seeds(seeds)
-            elif self.BUNDLED_SEEDS_PATH.exists():
-                logger.info("Volume empty, loading bundled seeds from %s", self.BUNDLED_SEEDS_PATH)
-                with open(self.BUNDLED_SEEDS_PATH) as f:
-                    seeds = json.load(f)
-                self._load_seeds(seeds)
-            else:
-                logger.warning("No graph or seeds found, starting empty")
-            logger.info(
-                "Graph loaded: %d nodes, %d edges",
-                self.graph.number_of_nodes(),
-                self.graph.number_of_edges(),
-            )
-
-    def _load_seeds(self, seeds: dict):
-        for node in seeds.get("nodes", []):
-            node_id = node.pop("id")
-            self.graph.add_node(node_id, **node)
-        for edge in seeds.get("edges", []):
-            self.graph.add_edge(
-                edge["source"],
-                edge["target"],
-                type=edge.get("type", "thematic"),
-                weight=edge.get("weight", 1.0),
-                theme=edge.get("theme", ""),
-            )
+        nc = await self.node_count()
+        ec = await self.edge_count()
+        logger.info("Graph loaded: %d nodes, %d edges", nc, ec)
 
     async def save(self):
-        async with self._lock:
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-            data = nx.node_link_data(self.graph)
-            with open(self.graph_path, "w") as f:
-                json.dump(data, f, indent=2, default=str)
-            logger.info("Graph saved to %s", self.graph_path)
+        # No-op: mutations are immediately durable in Postgres
+        pass
+
+    async def close(self):
+        await self.pool.close()
+        logger.info("Database pool closed")
+
+    async def node_count(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT count(*) FROM nodes")
+
+    async def edge_count(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT count(*) FROM edges")
 
     async def add_node(self, node_id: str, **attrs) -> None:
-        async with self._lock:
-            self.graph.add_node(node_id, **attrs)
-            self._auto_link(node_id)
+        async with self.pool.acquire() as conn:
+            tags = attrs.get("tags", [])
+            if not isinstance(tags, list):
+                tags = []
+            figures = attrs.get("figures", [])
+            if not isinstance(figures, list):
+                figures = []
+
+            await conn.execute(
+                """
+                INSERT INTO nodes (
+                    id, type, name, year, month, month_num, day, time,
+                    country, region, city, slug, layer, visibility,
+                    created_by, tags, one_liner, figures,
+                    flash_timepoint_id, flash_slug, flash_share_url, era,
+                    created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8,
+                    $9, $10, $11, $12, $13, $14,
+                    $15, $16, $17, $18,
+                    $19, $20, $21, $22, $23
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    type = EXCLUDED.type,
+                    name = EXCLUDED.name,
+                    year = EXCLUDED.year,
+                    month = EXCLUDED.month,
+                    month_num = EXCLUDED.month_num,
+                    day = EXCLUDED.day,
+                    time = EXCLUDED.time,
+                    country = EXCLUDED.country,
+                    region = EXCLUDED.region,
+                    city = EXCLUDED.city,
+                    slug = EXCLUDED.slug,
+                    layer = EXCLUDED.layer,
+                    visibility = EXCLUDED.visibility,
+                    created_by = EXCLUDED.created_by,
+                    tags = EXCLUDED.tags,
+                    one_liner = EXCLUDED.one_liner,
+                    figures = EXCLUDED.figures,
+                    flash_timepoint_id = EXCLUDED.flash_timepoint_id,
+                    flash_slug = EXCLUDED.flash_slug,
+                    flash_share_url = EXCLUDED.flash_share_url,
+                    era = EXCLUDED.era
+                """,
+                node_id,
+                attrs.get("type", "event"),
+                attrs.get("name", ""),
+                attrs.get("year"),
+                attrs.get("month", ""),
+                attrs.get("month_num", 0),
+                attrs.get("day", 0),
+                attrs.get("time", ""),
+                attrs.get("country", ""),
+                attrs.get("region", ""),
+                attrs.get("city", ""),
+                attrs.get("slug", ""),
+                attrs.get("layer", 0),
+                attrs.get("visibility", "private"),
+                attrs.get("created_by", "system"),
+                tags,
+                attrs.get("one_liner", ""),
+                figures,
+                attrs.get("flash_timepoint_id"),
+                attrs.get("flash_slug", ""),
+                attrs.get("flash_share_url", ""),
+                attrs.get("era", ""),
+                _parse_dt(attrs.get("created_at")),
+            )
+        await self._auto_link(node_id)
 
     async def add_edge(self, src: str, tgt: str, edge_type: str, **attrs) -> None:
         if edge_type not in VALID_EDGE_TYPES:
             raise ValueError(f"Invalid edge type: {edge_type}. Must be one of {VALID_EDGE_TYPES}")
-        async with self._lock:
-            self.graph.add_edge(src, tgt, type=edge_type, **attrs)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edges (source, target, type, weight, theme)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (source, target, type) DO NOTHING
+                """,
+                src, tgt, edge_type,
+                attrs.get("weight", 1.0),
+                attrs.get("theme", ""),
+            )
 
-    def get_node(self, node_id: str) -> dict | None:
-        if node_id not in self.graph:
+    async def get_node(self, node_id: str) -> dict | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM nodes WHERE id = $1", node_id)
+        if row is None:
             return None
-        attrs = dict(self.graph.nodes[node_id])
-        attrs["path"] = node_id
-        return attrs
+        return _row_to_dict(row)
 
-    def browse(self, prefix: str = "") -> list[dict]:
+    async def update_node(self, node_id: str, **attrs) -> None:
+        if not attrs:
+            return
+        set_clauses = []
+        values = []
+        idx = 1
+        for key, val in attrs.items():
+            set_clauses.append(f"{key} = ${idx}")
+            values.append(val)
+            idx += 1
+        values.append(node_id)
+        query = f"UPDATE nodes SET {', '.join(set_clauses)} WHERE id = ${idx}"
+        async with self.pool.acquire() as conn:
+            await conn.execute(query, *values)
+
+    async def browse(self, prefix: str = "") -> list[dict]:
         prefix = prefix.strip("/")
+        async with self.pool.acquire() as conn:
+            if prefix:
+                # Match nodes whose id (stripped of leading /) starts with prefix
+                like_pattern = f"/{prefix}/%"
+                rows = await conn.fetch(
+                    "SELECT id FROM nodes WHERE visibility = 'public' AND id LIKE $1",
+                    like_pattern,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT id FROM nodes WHERE visibility = 'public'"
+                )
+
         results: dict[str, int] = {}
-        for node_id in self.graph.nodes:
-            attrs = self.graph.nodes[node_id]
-            if attrs.get("visibility") != "public":
-                continue
-            node_path = node_id.strip("/")
-            if prefix and not node_path.startswith(prefix):
-                continue
-            remainder = node_path[len(prefix):].strip("/") if prefix else node_path
+        for row in rows:
+            node_path = row["id"].strip("/")
+            if prefix:
+                remainder = node_path[len(prefix):].strip("/")
+            else:
+                remainder = node_path
             if not remainder:
                 continue
             next_segment = remainder.split("/")[0]
             results[next_segment] = results.get(next_segment, 0) + 1
-        items = [
+
+        return [
             {"segment": seg, "count": count, "label": seg}
             for seg, count in sorted(results.items())
         ]
-        return items
 
-    def today_in_history(self, month: int, day: int) -> list[dict]:
+    async def today_in_history(self, month: int, day: int) -> list[dict]:
         from app.core.url import NUM_TO_MONTH
         month_name = NUM_TO_MONTH.get(month, "")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM nodes
+                WHERE visibility = 'public'
+                  AND day = $1
+                  AND (lower(month) = $2 OR month_num = $3)
+                """,
+                day, month_name, month,
+            )
+        return [_row_to_dict(row) for row in rows]
+
+    async def random_public(self) -> dict | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM nodes
+                WHERE visibility = 'public' AND layer >= 1
+                ORDER BY random()
+                LIMIT 1
+                """
+            )
+        if row is None:
+            return None
+        return _row_to_dict(row)
+
+    async def search(self, query: str, limit: int = 20) -> list[dict]:
+        pattern = f"%{query}%"
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT *,
+                    CASE
+                        WHEN name ILIKE $1 THEN 1.0
+                        WHEN one_liner ILIKE $1 THEN 0.7
+                        ELSE 0.4
+                    END AS score
+                FROM nodes
+                WHERE visibility = 'public'
+                  AND (
+                    name ILIKE $1
+                    OR one_liner ILIKE $1
+                    OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1)
+                    OR EXISTS (SELECT 1 FROM unnest(figures) AS f WHERE f ILIKE $1)
+                  )
+                ORDER BY score DESC
+                LIMIT $2
+                """,
+                pattern, limit,
+            )
         results = []
-        for node_id, attrs in self.graph.nodes(data=True):
-            if attrs.get("visibility") != "public":
-                continue
-            node_month = attrs.get("month", "")
-            node_day = attrs.get("day")
-            if (
-                (isinstance(node_month, str) and node_month.lower() == month_name)
-                or (isinstance(node_month, int) and node_month == month)
-            ) and node_day == day:
-                results.append({**attrs, "path": node_id})
+        for row in rows:
+            d = _row_to_dict(row)
+            d["score"] = row["score"]
+            results.append(d)
         return results
 
-    def random_public(self) -> dict | None:
-        public = [
-            node_id
-            for node_id, attrs in self.graph.nodes(data=True)
-            if attrs.get("visibility") == "public" and attrs.get("layer", 0) >= 1
+    async def get_neighbors(self, node_id: str) -> list[dict]:
+        async with self.pool.acquire() as conn:
+            # Check node exists
+            exists = await conn.fetchval("SELECT 1 FROM nodes WHERE id = $1", node_id)
+            if not exists:
+                return []
+
+            rows = await conn.fetch(
+                """
+                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme, 'out' AS direction
+                FROM edges e JOIN nodes n ON n.id = e.target
+                WHERE e.source = $1
+                UNION ALL
+                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme, 'in' AS direction
+                FROM edges e JOIN nodes n ON n.id = e.source
+                WHERE e.target = $1
+                """,
+                node_id,
+            )
+        return [
+            {
+                "path": row["id"],
+                "name": row["name"],
+                "edge_type": row["edge_type"],
+                "weight": row["weight"],
+                "theme": row["theme"],
+            }
+            for row in rows
         ]
-        if not public:
-            return None
-        node_id = secrets.choice(public)
-        attrs = dict(self.graph.nodes[node_id])
-        attrs["path"] = node_id
-        return attrs
 
-    def search(self, query: str, limit: int = 20) -> list[dict]:
-        query_lower = query.lower()
-        results = []
-        for node_id, attrs in self.graph.nodes(data=True):
-            if attrs.get("visibility") != "public":
-                continue
-            score = 0.0
-            name = attrs.get("name", "")
-            one_liner = attrs.get("one_liner", "")
-            tags = attrs.get("tags", [])
-            figures = attrs.get("figures", [])
-            searchable = " ".join(
-                [name, one_liner]
-                + (tags if isinstance(tags, list) else [])
-                + (figures if isinstance(figures, list) else [])
-            ).lower()
-            if query_lower in searchable:
-                if query_lower in name.lower():
-                    score = 1.0
-                elif query_lower in one_liner.lower():
-                    score = 0.7
-                else:
-                    score = 0.4
-                results.append({**attrs, "path": node_id, "score": score})
-        results.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return results[:limit]
-
-    def get_neighbors(self, node_id: str) -> list[dict]:
-        if node_id not in self.graph:
-            return []
-        neighbors = []
-        for _, tgt, data in self.graph.out_edges(node_id, data=True):
-            tgt_attrs = dict(self.graph.nodes[tgt])
-            neighbors.append({
-                "path": tgt,
-                "name": tgt_attrs.get("name", ""),
-                "edge_type": data.get("type", ""),
-                "weight": data.get("weight", 1.0),
-                "theme": data.get("theme", ""),
-            })
-        for src, _, data in self.graph.in_edges(node_id, data=True):
-            src_attrs = dict(self.graph.nodes[src])
-            neighbors.append({
-                "path": src,
-                "name": src_attrs.get("name", ""),
-                "edge_type": data.get("type", ""),
-                "weight": data.get("weight", 1.0),
-                "theme": data.get("theme", ""),
-            })
-        return neighbors
-
-    def stats(self) -> dict:
-        layer_counts: dict[str, int] = {}
-        edge_type_counts: dict[str, int] = {}
-        for _, attrs in self.graph.nodes(data=True):
-            layer = str(attrs.get("layer", 0))
-            layer_counts[layer] = layer_counts.get(layer, 0) + 1
-        for _, _, data in self.graph.edges(data=True):
-            etype = data.get("type", "unknown")
-            edge_type_counts[etype] = edge_type_counts.get(etype, 0) + 1
+    async def stats(self) -> dict:
+        async with self.pool.acquire() as conn:
+            total_nodes = await conn.fetchval("SELECT count(*) FROM nodes")
+            total_edges = await conn.fetchval("SELECT count(*) FROM edges")
+            layer_rows = await conn.fetch(
+                "SELECT layer::text AS layer, count(*) AS cnt FROM nodes GROUP BY layer"
+            )
+            edge_type_rows = await conn.fetch(
+                "SELECT type, count(*) AS cnt FROM edges GROUP BY type"
+            )
         return {
-            "total_nodes": self.graph.number_of_nodes(),
-            "total_edges": self.graph.number_of_edges(),
-            "layer_counts": layer_counts,
-            "edge_type_counts": edge_type_counts,
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+            "layer_counts": {row["layer"]: row["cnt"] for row in layer_rows},
+            "edge_type_counts": {row["type"]: row["cnt"] for row in edge_type_rows},
         }
 
-    def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
-        return [
-            node_id
-            for node_id in self.graph.nodes
-            if self.graph.degree(node_id) < threshold
-        ]
+    async def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT n.id, coalesce(ec.cnt, 0) AS deg
+                FROM nodes n
+                LEFT JOIN (
+                    SELECT id, count(*) AS cnt FROM (
+                        SELECT source AS id FROM edges
+                        UNION ALL
+                        SELECT target AS id FROM edges
+                    ) sub GROUP BY id
+                ) ec ON ec.id = n.id
+                WHERE coalesce(ec.cnt, 0) < $1
+                """,
+                threshold,
+            )
+        return [row["id"] for row in rows]
 
-    def _auto_link(self, node_id: str):
-        attrs = self.graph.nodes.get(node_id, {})
-        node_year = attrs.get("year")
-        node_country = attrs.get("country", "")
-        node_region = attrs.get("region", "")
-        node_city = attrs.get("city", "")
-        node_tags = set(attrs.get("tags", []))
+    async def degree(self, node_id: str) -> int:
+        async with self.pool.acquire() as conn:
+            count = await conn.fetchval(
+                """
+                SELECT count(*) FROM (
+                    SELECT 1 FROM edges WHERE source = $1
+                    UNION ALL
+                    SELECT 1 FROM edges WHERE target = $1
+                ) sub
+                """,
+                node_id,
+            )
+        return count or 0
 
-        for other_id, other_attrs in self.graph.nodes(data=True):
-            if other_id == node_id:
-                continue
+    async def has_edge(self, src: str, tgt: str) -> bool:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchval(
+                "SELECT 1 FROM edges WHERE source = $1 AND target = $2 LIMIT 1",
+                src, tgt,
+            )
+        return row is not None
 
-            # contemporaneous: same year +/- 1
-            other_year = other_attrs.get("year")
-            if (
-                node_year is not None
-                and other_year is not None
-                and abs(node_year - other_year) <= 1
-            ):
-                if not self.graph.has_edge(node_id, other_id):
-                    self.graph.add_edge(node_id, other_id, type="contemporaneous", weight=0.5)
-                if not self.graph.has_edge(other_id, node_id):
-                    self.graph.add_edge(other_id, node_id, type="contemporaneous", weight=0.5)
+    async def _auto_link(self, node_id: str):
+        async with self.pool.acquire() as conn:
+            node = await conn.fetchrow("SELECT * FROM nodes WHERE id = $1", node_id)
+            if node is None:
+                return
 
-            # same_location: matching country + region + city
-            if (
-                node_country
-                and node_country == other_attrs.get("country", "")
-                and node_region == other_attrs.get("region", "")
-                and node_city == other_attrs.get("city", "")
-            ):
-                if not self.graph.has_edge(node_id, other_id):
-                    self.graph.add_edge(node_id, other_id, type="same_location", weight=0.5)
-                if not self.graph.has_edge(other_id, node_id):
-                    self.graph.add_edge(other_id, node_id, type="same_location", weight=0.5)
+            node_year = node["year"]
+            node_country = node["country"] or ""
+            node_region = node["region"] or ""
+            node_city = node["city"] or ""
+            node_tags = list(node["tags"]) if node["tags"] else []
 
-            # thematic: overlapping tags
-            other_tags = set(other_attrs.get("tags", []))
-            overlap = node_tags & other_tags
-            if overlap:
-                theme = ", ".join(sorted(overlap))
-                if not self.graph.has_edge(node_id, other_id):
-                    self.graph.add_edge(
-                        node_id, other_id, type="thematic", weight=0.3, theme=theme
-                    )
-                if not self.graph.has_edge(other_id, node_id):
-                    self.graph.add_edge(
-                        other_id, node_id, type="thematic", weight=0.3, theme=theme
-                    )
+            # Contemporaneous: same year +/- 1
+            if node_year is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight)
+                    SELECT $1, id, 'contemporaneous', 0.5
+                    FROM nodes
+                    WHERE id != $1
+                      AND year IS NOT NULL
+                      AND abs(year - $2) <= 1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = nodes.id AND type = 'contemporaneous'
+                      )
+                    """,
+                    node_id, node_year,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight)
+                    SELECT id, $1, 'contemporaneous', 0.5
+                    FROM nodes
+                    WHERE id != $1
+                      AND year IS NOT NULL
+                      AND abs(year - $2) <= 1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = nodes.id AND target = $1 AND type = 'contemporaneous'
+                      )
+                    """,
+                    node_id, node_year,
+                )
+
+            # Same location: matching country + region + city
+            if node_country:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight)
+                    SELECT $1, id, 'same_location', 0.5
+                    FROM nodes
+                    WHERE id != $1
+                      AND country = $2 AND region = $3 AND city = $4
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = nodes.id AND type = 'same_location'
+                      )
+                    """,
+                    node_id, node_country, node_region, node_city,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight)
+                    SELECT id, $1, 'same_location', 0.5
+                    FROM nodes
+                    WHERE id != $1
+                      AND country = $2 AND region = $3 AND city = $4
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = nodes.id AND target = $1 AND type = 'same_location'
+                      )
+                    """,
+                    node_id, node_country, node_region, node_city,
+                )
+
+            # Thematic: overlapping tags
+            if node_tags:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, theme)
+                    SELECT $1, n.id, 'thematic', 0.3,
+                           array_to_string(ARRAY(
+                               SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
+                               ORDER BY 1
+                           ), ', ')
+                    FROM nodes n
+                    WHERE n.id != $1
+                      AND n.tags && $2::text[]
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = n.id AND type = 'thematic'
+                      )
+                    """,
+                    node_id, node_tags,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, theme)
+                    SELECT n.id, $1, 'thematic', 0.3,
+                           array_to_string(ARRAY(
+                               SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
+                               ORDER BY 1
+                           ), ', ')
+                    FROM nodes n
+                    WHERE n.id != $1
+                      AND n.tags && $2::text[]
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = n.id AND target = $1 AND type = 'thematic'
+                      )
+                    """,
+                    node_id, node_tags,
+                )
 
 
 async def get_graph_manager(request: Request) -> GraphManager:

@@ -13,11 +13,11 @@ async def get_neighbors(
     gm: GraphManager = Depends(get_graph_manager),
 ):
     full_path = "/" + path.strip("/")
-    if gm.get_node(full_path) is None:
+    if await gm.get_node(full_path) is None:
         raise HTTPException(status_code=404, detail="Node not found")
-    return gm.get_neighbors(full_path)
+    return await gm.get_neighbors(full_path)
 
 
 @router.get("/stats", response_model=GraphStatsResponse)
 async def graph_stats(gm: GraphManager = Depends(get_graph_manager)):
-    return gm.stats()
+    return await gm.stats()

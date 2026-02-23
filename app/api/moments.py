@@ -24,13 +24,13 @@ async def get_moment(
     user_id: str | None = Depends(get_user_id),
 ):
     full_path = "/" + path.strip("/")
-    node = gm.get_node(full_path)
+    node = await gm.get_node(full_path)
     if node is None:
         raise HTTPException(status_code=404, detail="Moment not found")
     if node.get("visibility") != "public":
         if not user_id or node.get("created_by") != user_id:
             raise HTTPException(status_code=404, detail="Moment not found")
-    raw_edges = gm.get_neighbors(full_path)
+    raw_edges = await gm.get_neighbors(full_path)
     node["edges"] = [
         {
             "source": full_path,
@@ -46,7 +46,7 @@ async def get_moment(
 
 @router.get("/browse", response_model=BrowseResponse)
 async def browse_root(gm: GraphManager = Depends(get_graph_manager)):
-    items = gm.browse("")
+    items = await gm.browse("")
     return BrowseResponse(prefix="/", items=[BrowseItem(**i) for i in items])
 
 
@@ -56,14 +56,14 @@ async def browse_path(
     gm: GraphManager = Depends(get_graph_manager),
 ):
     prefix = path.strip("/")
-    items = gm.browse(prefix)
+    items = await gm.browse(prefix)
     return BrowseResponse(prefix=f"/{prefix}", items=[BrowseItem(**i) for i in items])
 
 
 @router.get("/today", response_model=TodayResponse)
 async def today_in_history(gm: GraphManager = Depends(get_graph_manager)):
     now = datetime.now(timezone.utc)
-    events = gm.today_in_history(now.month, now.day)
+    events = await gm.today_in_history(now.month, now.day)
     return TodayResponse(
         month=now.month,
         day=now.day,
@@ -73,7 +73,7 @@ async def today_in_history(gm: GraphManager = Depends(get_graph_manager)):
 
 @router.get("/random", response_model=MomentSummary)
 async def random_moment(gm: GraphManager = Depends(get_graph_manager)):
-    node = gm.random_public()
+    node = await gm.random_public()
     if node is None:
         raise HTTPException(status_code=404, detail="No public moments available")
     return MomentSummary(**_summary(node))
@@ -84,7 +84,7 @@ async def search_moments(
     q: str = Query(..., min_length=1),
     gm: GraphManager = Depends(get_graph_manager),
 ):
-    results = gm.search(q)
+    results = await gm.search(q)
     return [
         SearchResult(
             path=r["path"],

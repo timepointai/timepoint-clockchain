@@ -3,6 +3,7 @@ import shutil
 
 import pytest
 
+from app.core.db import create_pool, init_schema, seed_if_empty
 from app.core.graph import GraphManager
 
 
@@ -10,9 +11,16 @@ from app.core.graph import GraphManager
 async def graph_manager(tmp_path):
     seeds_src = os.path.join(os.path.dirname(__file__), "..", "data", "seeds.json")
     shutil.copy(seeds_src, tmp_path / "seeds.json")
-    gm = GraphManager(data_dir=str(tmp_path))
+
+    url = os.environ["DATABASE_URL"]
+    pool = await create_pool(url)
+    await init_schema(pool)
+    await seed_if_empty(pool, str(tmp_path))
+
+    gm = GraphManager(pool, data_dir=str(tmp_path))
     await gm.load()
-    return gm
+    yield gm
+    await pool.close()
 
 
 @pytest.mark.asyncio
@@ -33,7 +41,7 @@ async def test_auto_link_contemporaneous(graph_manager):
     )
 
     # Should have edges to both Apollo 11 moon landing and Apollo 12
-    neighbors = graph_manager.get_neighbors(
+    neighbors = await graph_manager.get_neighbors(
         "/1969/july/16/0932/united-states/florida/cape-canaveral/apollo-11-launch"
     )
     neighbor_paths = [n["path"] for n in neighbors]
@@ -58,7 +66,7 @@ async def test_auto_link_same_location(graph_manager):
         visibility="public",
     )
 
-    neighbors = graph_manager.get_neighbors(
+    neighbors = await graph_manager.get_neighbors(
         "/2020/may/30/1522/united-states/florida/cape-canaveral/spacex-crew-dragon-demo-2"
     )
     edge_types = [n["edge_type"] for n in neighbors]
@@ -82,7 +90,7 @@ async def test_auto_link_thematic(graph_manager):
         visibility="public",
     )
 
-    neighbors = graph_manager.get_neighbors(
+    neighbors = await graph_manager.get_neighbors(
         "/1961/april/12/0907/russia/moscow-oblast/baikonur/vostok-1-launch"
     )
     edge_types = [n["edge_type"] for n in neighbors]
@@ -110,8 +118,8 @@ async def test_bidirectional_edges(graph_manager):
     moon_path = "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
 
     # Check edge exists both ways
-    assert graph_manager.graph.has_edge(new_path, moon_path)
-    assert graph_manager.graph.has_edge(moon_path, new_path)
+    assert await graph_manager.has_edge(new_path, moon_path)
+    assert await graph_manager.has_edge(moon_path, new_path)
 
 
 @pytest.mark.asyncio
@@ -139,7 +147,7 @@ async def test_browse_only_public(graph_manager):
         visibility="private",
     )
 
-    items = graph_manager.browse("2000")
+    items = await graph_manager.browse("2000")
     assert len(items) == 0
 
 
@@ -154,7 +162,7 @@ async def test_search_only_public(graph_manager):
         visibility="private",
     )
 
-    results = graph_manager.search("secret")
+    results = await graph_manager.search("secret")
     assert len(results) == 0
 
 
@@ -172,6 +180,6 @@ async def test_today_only_public(graph_manager):
         visibility="private",
     )
 
-    events = graph_manager.today_in_history(3, 15)
+    events = await graph_manager.today_in_history(3, 15)
     names = [e["name"] for e in events]
     assert "Private March Event" not in names

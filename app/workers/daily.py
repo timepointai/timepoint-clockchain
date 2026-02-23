@@ -36,7 +36,7 @@ class DailyWorker:
 
     async def _run_daily(self):
         now = datetime.now(timezone.utc)
-        events = self.gm.today_in_history(now.month, now.day)
+        events = await self.gm.today_in_history(now.month, now.day)
         logger.info(
             "Today in history (%s/%s): %d events found",
             now.month, now.day, len(events),
@@ -48,7 +48,7 @@ class DailyWorker:
         sceneless = self.get_sceneless_events(events)
         logger.info("Events without Flash scenes: %d", len(sceneless))
 
-        to_generate = self._rank_events(sceneless)[:MAX_DAILY_GENERATIONS]
+        to_generate = (await self._rank_events(sceneless))[:MAX_DAILY_GENERATIONS]
 
         if not to_generate or not self.jm:
             return
@@ -61,19 +61,18 @@ class DailyWorker:
             await self.jm.process_job(job)
             logger.info("Daily generation queued: %s (job %s)", query, job.id)
 
-        await self.gm.save()
-
     def get_sceneless_events(self, events: list[dict]) -> list[dict]:
         return [
             e for e in events
             if not e.get("flash_timepoint_id") and not e.get("flash_scene")
         ]
 
-    def _rank_events(self, events: list[dict]) -> list[dict]:
-        def score(e: dict) -> float:
+    async def _rank_events(self, events: list[dict]) -> list[dict]:
+        scored = []
+        for e in events:
             path = e.get("path", "")
-            degree = self.gm.graph.degree(path) if path in self.gm.graph else 0
+            deg = await self.gm.degree(path) if path else 0
             layer = e.get("layer", 0)
-            return degree + layer * 2
-
-        return sorted(events, key=score, reverse=True)
+            scored.append((e, deg + layer * 2))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [e for e, _ in scored]

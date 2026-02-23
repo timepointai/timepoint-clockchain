@@ -71,15 +71,14 @@ async def publish_moment(
     from datetime import datetime, timezone
 
     full_path = "/" + path.strip("/")
-    node = gm.get_node(full_path)
+    node = await gm.get_node(full_path)
     if node is None:
         raise HTTPException(status_code=404, detail="Moment not found")
 
-    async with gm._lock:
-        gm.graph.nodes[full_path]["visibility"] = body.visibility
-        if body.visibility == "public":
-            gm.graph.nodes[full_path]["published_at"] = datetime.now(timezone.utc).isoformat()
-    await gm.save()
+    update_fields = {"visibility": body.visibility}
+    if body.visibility == "public":
+        update_fields["published_at"] = datetime.now(timezone.utc)
+    await gm.update_node(full_path, **update_fields)
     return {"path": full_path, "visibility": body.visibility}
 
 
@@ -126,5 +125,4 @@ async def index_moment(
         attrs["layer"] = max(attrs.get("layer", 0), 2)
 
     await gm.add_node(path, **attrs)
-    await gm.save()
     return {"path": path, "status": "indexed"}

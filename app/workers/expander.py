@@ -61,13 +61,13 @@ class GraphExpander:
             await asyncio.sleep(self.interval)
 
     async def _expand_once(self):
-        frontier = self.gm.get_frontier_nodes(threshold=3)
+        frontier = await self.gm.get_frontier_nodes(threshold=3)
         if not frontier:
             logger.info("No frontier nodes to expand")
             return
 
         node_id = frontier[0]
-        node = self.gm.get_node(node_id)
+        node = await self.gm.get_node(node_id)
         if not node:
             return
 
@@ -77,7 +77,6 @@ class GraphExpander:
         for event in related:
             await self._add_event(event, source_node_id=node_id)
 
-        await self.gm.save()
         logger.info("Expansion complete: added %d events from %s", len(related), node_id)
 
     async def _generate_related(self, node: dict) -> list[dict]:
@@ -134,7 +133,7 @@ class GraphExpander:
             slug=event.get("name", "unknown"),
         )
 
-        if self.gm.get_node(path):
+        if await self.gm.get_node(path):
             return
 
         await self.gm.add_node(

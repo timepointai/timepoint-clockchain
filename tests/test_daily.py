@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.db import create_pool, init_schema, seed_if_empty
 from app.core.graph import GraphManager
 from app.core.jobs import JobManager
 from app.workers.daily import DailyWorker
@@ -14,9 +15,16 @@ from app.workers.renderer import FlashClient
 async def graph_manager(tmp_path):
     seeds_src = os.path.join(os.path.dirname(__file__), "..", "data", "seeds.json")
     shutil.copy(seeds_src, tmp_path / "seeds.json")
-    gm = GraphManager(data_dir=str(tmp_path))
+
+    url = os.environ["DATABASE_URL"]
+    pool = await create_pool(url)
+    await init_schema(pool)
+    await seed_if_empty(pool, str(tmp_path))
+
+    gm = GraphManager(pool, data_dir=str(tmp_path))
     await gm.load()
-    return gm
+    yield gm
+    await pool.close()
 
 
 @pytest.fixture()
@@ -40,13 +48,13 @@ def job_manager(graph_manager):
 @pytest.mark.asyncio
 async def test_daily_finds_today_events(graph_manager):
     # March 15 matches Caesar
-    events = graph_manager.today_in_history(3, 15)
+    events = await graph_manager.today_in_history(3, 15)
     assert len(events) >= 1
 
 
 @pytest.mark.asyncio
 async def test_daily_identifies_sceneless(graph_manager):
-    events = graph_manager.today_in_history(3, 15)
+    events = await graph_manager.today_in_history(3, 15)
     worker = DailyWorker(graph_manager, None)
     sceneless = worker.get_sceneless_events(events)
     # All seed events lack flash_timepoint_id
