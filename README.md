@@ -4,10 +4,14 @@ TIMEPOINT's spatiotemporal graph index -- the Clockchain. A PostgreSQL-backed gr
 
 ## Suite Context
 
+Part of the TIMEPOINT platform:
+
 | Service | Domain | Repo | Relationship |
 |---------|--------|------|--------------|
 | **Flash API** | `api.timepointai.com` | `timepoint-flash-deploy` | Proxies clockchain endpoints; receives scene generation requests |
 | **Web App** | `app.timepointai.com` | `timepoint-web-app` | Consumes clockchain data via Flash proxy |
+| **iPhone App** | -- | `timepoint-iphone-app` | Consumes clockchain data via Flash proxy |
+| **Billing** | -- | `timepoint-billing` | Apple IAP verification, credit management |
 | **Clockchain** | internal only | `timepoint-clockchain` (this repo) | Graph index + content orchestrator |
 | **Deploy** | -- | `timepoint-clockchain-deploy-private` | Production Railway wrapper for this repo |
 

@@ -8,11 +8,14 @@ Spatiotemporal graph index for the TIMEPOINT platform. Stores historical events 
 
 ## Suite Context
 
+Part of the TIMEPOINT platform. Clockchain is a backend-only service -- not publicly exposed. Flash is its sole inbound caller.
+
 | Service | Relationship | Direction |
 |---------|-------------|-----------|
 | **timepoint-flash-deploy** | Scene generation + proxied API gateway | Bidirectional |
 | **timepoint-web-app** | Consumes clockchain data via Flash proxy | Inbound (via Flash) |
-| **timepoint-iphone-app** | Consumes clockchain data via Flash proxy | Inbound (via Flash) |
+| **timepoint-iphone-app** | Consumes clockchain data via Flash proxy (SwiftUI, v1.0.0 build 2, TestFlight-ready) | Inbound (via Flash) |
+| **timepoint-billing** | Apple IAP verification, credit management | Sibling (no direct calls) |
 | **timepoint-clockchain-deploy-private** | Production Railway deploy wrapper | Downstream |
 
 Flash is the only service that calls clockchain directly. Web and iPhone clients reach clockchain through Flash's `/api/v1/clockchain/*` proxy. Clockchain calls Flash for scene generation.
