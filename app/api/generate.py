@@ -101,6 +101,35 @@ async def bulk_generate(
     return results
 
 
+@router.post("/expand-once")
+async def expand_once(
+    request: Request,
+    gm: GraphManager = Depends(get_graph_manager),
+):
+    """Manually trigger one expansion cycle. Requires SERVICE_API_KEY + OPENROUTER_API_KEY."""
+    settings = get_settings()
+    if not settings.OPENROUTER_API_KEY:
+        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured")
+
+    from app.workers.expander import GraphExpander
+
+    before_nodes = await gm.node_count()
+    before_edges = await gm.edge_count()
+
+    expander = GraphExpander(gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL)
+    await expander._expand_once()
+
+    after_nodes = await gm.node_count()
+    after_edges = await gm.edge_count()
+
+    return {
+        "before": {"nodes": before_nodes, "edges": before_edges},
+        "after": {"nodes": after_nodes, "edges": after_edges},
+        "added_nodes": after_nodes - before_nodes,
+        "added_edges": after_edges - before_edges,
+    }
+
+
 @router.post("/index")
 async def index_moment(
     body: dict,
