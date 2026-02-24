@@ -13,13 +13,9 @@ Spatiotemporal graph index for the TIMEPOINT platform. Stores historical events 
 | **timepoint-flash-deploy** | Scene generation + proxied API gateway | Bidirectional |
 | **timepoint-web-app** | Consumes clockchain data via Flash proxy | Inbound (via Flash) |
 | **timepoint-iphone-app** | Consumes clockchain data via Flash proxy | Inbound (via Flash) |
-| **timepoint-billing** | None | No direct connection |
-| **timepoint-pro** | None | No direct connection |
-| **timepoint-snag-bench** | None | No direct connection |
+| **timepoint-clockchain-deploy-private** | Production Railway deploy wrapper | Downstream |
 
 Flash is the only service that calls clockchain directly. Web and iPhone clients reach clockchain through Flash's `/api/v1/clockchain/*` proxy. Clockchain calls Flash for scene generation.
-
-**Networking:** Same Railway project as Flash. Uses `http://timepoint-flash-deploy.railway.internal:8080` (private networking, no public exposure).
 
 ## Key Patterns
 
@@ -80,21 +76,44 @@ Canonical 8-segment paths: `/{year}/{month}/{day}/{time}/{country}/{region}/{cit
 - `app/core/url.py` -- `build_path()`, `parse_path()`, `parse_partial_path()`, `slugify()`
 - Month is always lowercase spelled-out name, `month_num` stored separately as integer
 
-## Railway Deployment
+## Autonomous Workers
 
-Deployed via [timepoint-clockchain-deploy-private](https://github.com/timepoint-ai/timepoint-clockchain-deploy-private). 3-stage Dockerfile clones this upstream repo at build time.
+### Renderer (`app/workers/renderer.py`)
 
-- **Railway Postgres plugin** provides `DATABASE_URL` automatically
-- **Health check:** `GET /health` (configured in `railway.json`)
-- **Restart policy:** ON_FAILURE, max 10 retries
-- **Internal URL:** `http://timepoint-clockchain.railway.internal:8080`
+HTTP client wrapping Flash API. Methods: `generate_sync(query, preset, request_context)` and `get_timepoint(timepoint_id)`. Used by the JobManager and DailyWorker to generate Flash scenes from clockchain moments.
 
-To redeploy with latest upstream:
-```bash
-cd timepoint-clockchain-deploy-private
-git commit --allow-empty -m "chore: rebuild with latest upstream"
-git push
-```
+### Expander (`app/workers/expander.py`)
+
+LLM-driven autonomous graph growth loop. Runs on a configurable interval (default 300 seconds). Each cycle:
+
+1. Finds frontier nodes with degree < 3
+2. Sends the node's metadata to OpenRouter with a historian prompt
+3. Parses the LLM response as a JSON array of 3-5 related events
+4. Adds new nodes to the graph with Layer 1 metadata
+5. Creates typed edges back to the source node
+
+Gated by `EXPANSION_ENABLED=true` and requires `OPENROUTER_API_KEY`. Can also be triggered manually via `POST /api/v1/expand-once` (runs one expansion cycle on demand regardless of the `EXPANSION_ENABLED` flag, but still requires `OPENROUTER_API_KEY`).
+
+### Judge (`app/workers/judge.py`)
+
+LLM content moderation gate. Classifies generation queries into three verdicts:
+
+- **approve** -- safe historical topic
+- **sensitive** -- historically significant but involves mature themes; approved with disclaimer
+- **reject** -- harmful, hateful, exploitative, or not a genuine historical query
+
+Uses OpenRouter. Called during the generation flow before scene creation.
+
+### Daily Worker (`app/workers/daily.py`)
+
+"Today in History" cron worker. Runs every 24 hours. Each cycle:
+
+1. Queries `today_in_history()` for events matching the current month/day
+2. Filters to events without Flash scenes (`flash_timepoint_id` is null)
+3. Ranks by degree + layer score
+4. Queues up to 5 scene generations via the JobManager
+
+Gated by `DAILY_CRON_ENABLED=true`.
 
 ## Testing
 
