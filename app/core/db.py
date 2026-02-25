@@ -32,7 +32,11 @@ CREATE TABLE IF NOT EXISTS nodes (
     flash_share_url TEXT DEFAULT '',
     era TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now(),
-    published_at TIMESTAMPTZ
+    published_at TIMESTAMPTZ,
+    source_type TEXT DEFAULT 'historical',
+    confidence FLOAT,
+    source_run_id TEXT,
+    tdf_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -54,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_tags ON nodes USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_nodes_figures ON nodes USING GIN(figures);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
+CREATE INDEX IF NOT EXISTS idx_nodes_source_type ON nodes(source_type);
 """
 
 TRGM_DDL = """

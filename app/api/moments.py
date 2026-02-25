@@ -120,4 +120,5 @@ def _summary(node: dict) -> dict:
         "day": node.get("day", 0),
         "layer": node.get("layer", 0),
         "visibility": node.get("visibility", "private"),
+        "source_type": node.get("source_type", "historical"),
     }

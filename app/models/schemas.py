@@ -12,6 +12,7 @@ class MomentSummary(BaseModel):
     day: int = 0
     layer: int = 0
     visibility: str = "private"
+    source_type: str = "historical"
 
 
 class EdgeResponse(BaseModel):
@@ -38,6 +39,10 @@ class MomentResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     figures: list[str] = Field(default_factory=list)
     created_by: str = ""
+    source_type: str = "historical"
+    confidence: float | None = None
+    source_run_id: str | None = None
+    tdf_hash: str | None = None
     created_at: str = ""
     published_at: str = ""
     flash_scene: dict | None = None
@@ -67,6 +72,7 @@ class GraphStatsResponse(BaseModel):
     total_edges: int
     layer_counts: dict[str, int] = Field(default_factory=dict)
     edge_type_counts: dict[str, int] = Field(default_factory=dict)
+    source_type_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class GenerateRequest(BaseModel):
@@ -96,3 +102,44 @@ class TodayResponse(BaseModel):
     month: int
     day: int
     events: list[MomentSummary] = Field(default_factory=list)
+
+
+class SubgraphNodeInput(BaseModel):
+    id: str
+    name: str = ""
+    year: int | None = None
+    month: str = ""
+    month_num: int = 0
+    day: int = 0
+    time: str = ""
+    country: str = ""
+    region: str = ""
+    city: str = ""
+    slug: str = ""
+    layer: int = 0
+    visibility: str = "public"
+    tags: list[str] = Field(default_factory=list)
+    one_liner: str = ""
+    figures: list[str] = Field(default_factory=list)
+    source_type: str = "historical"
+    confidence: float | None = None
+    source_run_id: str | None = None
+    tdf_hash: str | None = None
+
+
+class SubgraphEdgeInput(BaseModel):
+    source: str
+    target: str
+    type: str = "thematic"
+    weight: float = 1.0
+    theme: str = ""
+
+
+class SubgraphIngestRequest(BaseModel):
+    nodes: list[SubgraphNodeInput] = Field(default_factory=list)
+    edges: list[SubgraphEdgeInput] = Field(default_factory=list)
+
+
+class SubgraphIngestResponse(BaseModel):
+    ingested_nodes: int = 0
+    ingested_edges: int = 0

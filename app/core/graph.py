@@ -15,6 +15,7 @@ NODE_COLUMNS = [
     "created_by", "tags", "one_liner", "figures",
     "flash_timepoint_id", "flash_slug", "flash_share_url", "era",
     "created_at", "published_at",
+    "source_type", "confidence", "source_run_id", "tdf_hash",
 ]
 
 
@@ -88,12 +89,13 @@ class GraphManager:
                     country, region, city, slug, layer, visibility,
                     created_by, tags, one_liner, figures,
                     flash_timepoint_id, flash_slug, flash_share_url, era,
-                    created_at
+                    created_at, source_type, confidence, source_run_id, tdf_hash
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
                     $15, $16, $17, $18,
-                    $19, $20, $21, $22, $23
+                    $19, $20, $21, $22, $23,
+                    $24, $25, $26, $27
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -116,7 +118,11 @@ class GraphManager:
                     flash_timepoint_id = EXCLUDED.flash_timepoint_id,
                     flash_slug = EXCLUDED.flash_slug,
                     flash_share_url = EXCLUDED.flash_share_url,
-                    era = EXCLUDED.era
+                    era = EXCLUDED.era,
+                    source_type = EXCLUDED.source_type,
+                    confidence = EXCLUDED.confidence,
+                    source_run_id = EXCLUDED.source_run_id,
+                    tdf_hash = EXCLUDED.tdf_hash
                 """,
                 node_id,
                 attrs.get("type", "event"),
@@ -141,6 +147,10 @@ class GraphManager:
                 attrs.get("flash_share_url", ""),
                 attrs.get("era", ""),
                 _parse_dt(attrs.get("created_at")),
+                attrs.get("source_type", "historical"),
+                attrs.get("confidence"),
+                attrs.get("source_run_id"),
+                attrs.get("tdf_hash"),
             )
         await self._auto_link(node_id)
 
@@ -313,11 +323,15 @@ class GraphManager:
             edge_type_rows = await conn.fetch(
                 "SELECT type, count(*) AS cnt FROM edges GROUP BY type"
             )
+            source_type_rows = await conn.fetch(
+                "SELECT coalesce(source_type, 'historical') AS source_type, count(*) AS cnt FROM nodes GROUP BY source_type"
+            )
         return {
             "total_nodes": total_nodes,
             "total_edges": total_edges,
             "layer_counts": {row["layer"]: row["cnt"] for row in layer_rows},
             "edge_type_counts": {row["type"]: row["cnt"] for row in edge_type_rows},
+            "source_type_counts": {row["source_type"]: row["cnt"] for row in source_type_rows},
         }
 
     async def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
