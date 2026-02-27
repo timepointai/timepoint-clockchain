@@ -5,6 +5,8 @@ from pathlib import Path
 import asyncpg
 from fastapi import Request
 
+from app.core.tdf import compute_tdf_hash
+
 logger = logging.getLogger("clockchain.graph")
 
 VALID_EDGE_TYPES = {"causes", "contemporaneous", "same_location", "thematic"}
@@ -74,6 +76,9 @@ class GraphManager:
             return await conn.fetchval("SELECT count(*) FROM edges")
 
     async def add_node(self, node_id: str, **attrs) -> None:
+        if not attrs.get("tdf_hash"):
+            attrs["tdf_hash"] = compute_tdf_hash({"slug": node_id.split("/")[-1] if "/" in node_id else node_id, **attrs})
+
         async with self.pool.acquire() as conn:
             tags = attrs.get("tags", [])
             if not isinstance(tags, list):
