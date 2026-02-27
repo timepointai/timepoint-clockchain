@@ -1,12 +1,27 @@
 # timepoint-clockchain
 
-TIMEPOINT's spatiotemporal graph index -- the Clockchain. A PostgreSQL-backed graph of historical moments with canonical temporal URLs, typed edges, autonomous workers, and browse/search/discovery APIs.
+**Temporal causal graph for AI agents.** PostgreSQL-backed directed graph of historical moments — canonical spatiotemporal URLs, typed causal edges, autonomous expansion, and browse/search/discovery APIs.
 
-The Clockchain stores **Rendered Past** — canonical historical events rendered by Flash with causal structure, entity states, dialog, and confidence — and **Rendered Future** — simulation outputs from Pro, scored for convergence and stored as TDF records. As reality validates predicted paths, the Bayesian prior strengthens: more rendered events with causal edges means fewer plausible things *could* have happened in the gaps, approaching asymptotic coverage of any historical period.
+> [!NOTE]
+> **Why this exists** — AI agents that reason about causality across time currently rely on web search (noisy, unstructured), knowledge graphs (no temporal dimension), or hallucination. The Clockchain is a structured alternative: every node carries dialog, entity states, provenance, and confidence, addressed by a canonical spatiotemporal URL, in a format ([TDF](https://github.com/timepoint-ai/timepoint-tdf)) designed for machine consumption.
 
-The Clockchain is grounding infrastructure — for Flash rendering, for Pro simulation, and for autonomous AI agent swarms that need structured temporal causal context. When agents need to understand causal chains across time, current options are web search (noisy), knowledge graphs (no temporal causality), or hallucination. The Clockchain provides a structured graph with dialog, entity states, provenance, and confidence at every node, in a format (TDF) designed for machine consumption.
+The graph accumulates two layers of rendered reality:
 
-The name is conceptual — this is a PostgreSQL-backed directed graph, not a blockchain.
+- **Rendered Past** — historical events rendered by [Flash](https://github.com/timepoint-ai/timepoint-flash) with full causal structure, entity states, dialog, and source grounding
+- **Rendered Future** — simulation outputs from [Pro](https://github.com/timepoint-ai/timepoint-pro), scored for convergence, stored as TDF records
+
+Each new event with causal edges tightens the Bayesian prior — fewer plausible things *could* have happened in the gaps — approaching asymptotic coverage of any historical period.
+
+*The name is conceptual. This is PostgreSQL, not a blockchain.*
+
+```mermaid
+flowchart TD
+    F["Flash scenes"] --> G["Clockchain Graph\n(PostgreSQL)"]
+    P["Pro simulations"] --> G
+    E["Expander\n(LLM-driven)"] --> G
+    G --> BP["Stronger Bayesian Prior"]
+    BP -. "fewer plausible gaps\nbetter future renderings" .-> G
+```
 
 ## Suite Context
 
@@ -18,20 +33,21 @@ The Clockchain is a directed graph stored in PostgreSQL (two tables: `nodes` and
 
 ### Canonical URL Format
 
+Every node has a unique spatiotemporal address — 8 segments encoding *when* and *where*:
+
 ```
-/{year}/{month}/{day}/{time}/{country}/{region}/{city}/{slug}
+/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar
+  │    │    │   │     │     │    │    └── slug (auto-generated)
+  │    │    │   │     │     │    └─────── city
+  │    │    │   │     │     └──────────── region
+  │    │    │   │     └───────────────── country (modern borders)
+  │    │    │   └───────────────────── time (24hr, no colon)
+  │    │    └───────────────────────── day
+  │    └────────────────────────────── month (lowercase name)
+  └─────────────────────────────────── year (negative = BCE)
 ```
 
-| Segment | Format | Example |
-|---------|--------|---------|
-| `year` | integer, negative for BCE | `-44` |
-| `month` | lowercase spelled-out name | `march` |
-| `day` | integer, no zero-padding | `15` |
-| `time` | 24hr, no colon | `1030` |
-| `country` | modern borders, kebab-case | `italy` |
-| `region` | state/province, kebab-case | `lazio` |
-| `city` | city/locality, kebab-case | `rome` |
-| `slug` | auto-generated, kebab-case | `assassination-of-julius-caesar` |
+Negative years for BCE, all segments kebab-case. This path is both the node’s primary key and its API address.
 
 ### Content Layers
 
@@ -98,7 +114,21 @@ Four background workers handle content generation and graph growth:
 | **Judge** | `app/workers/judge.py` | LLM content moderation gate; classifies queries as approve/sensitive/reject via OpenRouter | Used during generation flow |
 | **Daily** | `app/workers/daily.py` | "Today in History" cron; finds date-matching events without Flash scenes and queues generation | `DAILY_CRON_ENABLED=true` |
 
-The Expander runs on a configurable interval (default 300s), selects frontier nodes (degree < 3), and uses OpenRouter to generate 3-5 related historical events per cycle. The Daily worker runs every 24 hours and generates up to 5 scenes per day for events matching the current date.
+### How the Graph Grows
+
+```
+pick frontier node (degree < 3)
+         ↓
+LLM generates 3–5 related events
+         ↓
+add_node() → _auto_link()
+  · causal edges to source node
+  · temporal / spatial / thematic auto-edges
+         ↓
+sleep 300s → repeat
+```
+
+The Expander runs on a configurable interval (default 300s). The Daily worker adds a parallel growth path: every 24 hours, events matching today’s date get queued for Flash scene rendering (up to 5 per day).
 
 ## API Endpoints
 
@@ -260,18 +290,25 @@ Deployed on Railway via the [timepoint-clockchain-deploy-private](https://github
 
 Open-source engines for temporal AI. Render the past. Simulate the future. Score the predictions. Accumulate the graph.
 
-| Service | Type | Repo | Role |
-|---------|------|------|------|
-| **Flash** | Open Source | timepoint-flash | Reality Writer — renders grounded historical moments (Synthetic Time Travel) |
-| **Pro** | Open Source | timepoint-pro | Rendering Engine — SNAG-powered simulation, TDF output, training data |
-| **Clockchain** | **Open Source** | **timepoint-clockchain** | **Temporal Causal Graph — Rendered Past + Rendered Future, growing 24/7** |
-| **SNAG Bench** | Open Source | timepoint-snag-bench | Quality Certifier — measures Causal Resolution across renderings |
-| **Proteus** | Open Source | proteus | Settlement Layer — prediction markets that validate Rendered Futures |
-| **TDF** | Open Source | timepoint-tdf | Data Format — JSON-LD interchange across all services |
-| **Web App** | Private | timepoint-web-app | Browser client at app.timepointai.com |
-| **iPhone App** | Private | timepoint-iphone-app | iOS client — Synthetic Time Travel on mobile |
-| **Billing** | Private | timepoint-billing | Payment processing — Apple IAP + Stripe |
-| **Landing** | Private | timepoint-landing | Marketing site at timepointai.com |
+#### Open Source — Engines
+
+| Repo | Role |
+|------|------|
+| [**Flash**](https://github.com/timepoint-ai/timepoint-flash) | Reality Writer — renders grounded historical moments (Synthetic Time Travel) |
+| [**Pro**](https://github.com/timepoint-ai/timepoint-pro) | Simulation Engine — SNAG-powered temporal simulation, TDF output |
+| **Clockchain** *(this repo)* | **Temporal Causal Graph — Rendered Past + Rendered Future, growing 24/7** |
+| [**SNAG Bench**](https://github.com/timepoint-ai/timepoint-snag-bench) | Quality Certifier — measures Causal Resolution across renderings |
+| [**Proteus**](https://github.com/timepoint-ai/proteus-markets) | Settlement Layer — prediction markets that validate Rendered Futures |
+| [**TDF**](https://github.com/timepoint-ai/timepoint-tdf) | Data Format — JSON-LD interchange across all services |
+
+#### Private — Applications
+
+| Service | Role |
+|---------|------|
+| **Web App** | Browser client at `app.timepointai.com` |
+| **iPhone App** | iOS — Synthetic Time Travel on mobile |
+| **Billing** | Apple IAP + Stripe payment processing |
+| **Landing** | Marketing site at `timepointai.com` |
 
 **The Timepoint Thesis** — a forthcoming paper formalizing the Rendered Past / Rendered Future framework, the mathematics of Causal Resolution, the TDF specification, and the Proof of Causal Convergence protocol. Follow [@seanmcdonaldxyz](https://x.com/seanmcdonaldxyz) for updates.
 
