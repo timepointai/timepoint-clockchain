@@ -17,7 +17,7 @@ async def graph_manager(tmp_path):
     await init_schema(pool)
     await seed_if_empty(pool, str(tmp_path))
 
-    gm = GraphManager(pool, data_dir=str(tmp_path))
+    gm = GraphManager(pool)
     await gm.load()
     yield gm
     await pool.close()

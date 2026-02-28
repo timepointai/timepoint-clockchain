@@ -1,11 +1,8 @@
 import asyncio
-import json
 import logging
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 
 logger = logging.getLogger("clockchain.jobs")
 
@@ -202,11 +199,6 @@ class JobManager:
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
 
-            # Save scene reference (not the full scene — that lives in Flash)
-            self._save_scene(path, result)
-
-            await self.graph_manager.save()
-
             job.path = path
             job.flash_response = result
             job.status = "completed"
@@ -225,12 +217,3 @@ class JobManager:
             job.completed_at = datetime.now(timezone.utc).isoformat()
             logger.error("Job %s failed: %s", job.id, job.error, exc_info=True)
 
-    def _save_scene(self, path: str, scene_data: dict):
-        data_dir = self.graph_manager.data_dir
-        segments = path.strip("/").split("/")
-        scene_dir = data_dir / "scenes" / "/".join(segments)
-        scene_dir.mkdir(parents=True, exist_ok=True)
-        scene_file = scene_dir / "scene.json"
-        with open(scene_file, "w") as f:
-            json.dump(scene_data, f, indent=2, default=str)
-        logger.info("Scene saved to %s", scene_file)

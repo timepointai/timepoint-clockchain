@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime
-from pathlib import Path
 
 import asyncpg
 from fastapi import Request
+
+from app.core.tdf import compute_tdf_hash
 
 logger = logging.getLogger("clockchain.graph")
 
@@ -48,18 +49,13 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
 
 
 class GraphManager:
-    def __init__(self, pool: asyncpg.Pool, data_dir: str = "./data"):
+    def __init__(self, pool: asyncpg.Pool, **_kwargs):
         self.pool = pool
-        self.data_dir = Path(data_dir)
 
     async def load(self):
         nc = await self.node_count()
         ec = await self.edge_count()
         logger.info("Graph loaded: %d nodes, %d edges", nc, ec)
-
-    async def save(self):
-        # No-op: mutations are immediately durable in Postgres
-        pass
 
     async def close(self):
         await self.pool.close()
@@ -74,6 +70,9 @@ class GraphManager:
             return await conn.fetchval("SELECT count(*) FROM edges")
 
     async def add_node(self, node_id: str, **attrs) -> None:
+        if not attrs.get("tdf_hash"):
+            attrs["tdf_hash"] = compute_tdf_hash({"slug": node_id.split("/")[-1] if "/" in node_id else node_id, **attrs})
+
         async with self.pool.acquire() as conn:
             tags = attrs.get("tags", [])
             if not isinstance(tags, list):

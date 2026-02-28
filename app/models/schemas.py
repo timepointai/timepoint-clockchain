@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
 
 
@@ -42,10 +40,9 @@ class MomentResponse(BaseModel):
     source_type: str = "historical"
     confidence: float | None = None
     source_run_id: str | None = None
-    tdf_hash: str | None = None
+    tdf_hash: str = ""
     created_at: str = ""
     published_at: str = ""
-    flash_scene: dict | None = None
     edges: list[EdgeResponse] = Field(default_factory=list)
 
 

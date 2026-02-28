@@ -29,7 +29,7 @@ async def lifespan(application: FastAPI):
     await seed_if_empty(pool, settings.DATA_DIR)
 
     # Graph manager
-    gm = GraphManager(pool, data_dir=settings.DATA_DIR)
+    gm = GraphManager(pool)
     await gm.load()
     application.state.graph_manager = gm
 

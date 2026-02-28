@@ -1,9 +1,11 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import asyncpg
+
+from app.core.tdf import compute_tdf_hash
 
 logger = logging.getLogger("clockchain.db")
 
@@ -36,7 +38,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     source_type TEXT DEFAULT 'historical',
     confidence FLOAT,
     source_run_id TEXT,
-    tdf_hash TEXT
+    tdf_hash TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -128,17 +130,18 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
         async with conn.transaction():
             for node in seeds.get("nodes", []):
                 node_id = node.pop("id")
+                tdf_hash = compute_tdf_hash(node)
                 await conn.execute(
                     """
                     INSERT INTO nodes (
                         id, type, name, year, month, month_num, day, time,
                         country, region, city, slug, layer, visibility,
                         created_by, tags, one_liner, figures,
-                        flash_timepoint_id, created_at
+                        flash_timepoint_id, created_at, tdf_hash
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8,
                         $9, $10, $11, $12, $13, $14,
-                        $15, $16, $17, $18, $19, $20
+                        $15, $16, $17, $18, $19, $20, $21
                     )
                     ON CONFLICT (id) DO NOTHING
                     """,
@@ -162,6 +165,7 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
                     node.get("figures", []),
                     node.get("flash_timepoint_id"),
                     _parse_dt(node.get("created_at")),
+                    tdf_hash,
                 )
 
             for edge in seeds.get("edges", []):
