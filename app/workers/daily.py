@@ -64,7 +64,7 @@ class DailyWorker:
     def get_sceneless_events(self, events: list[dict]) -> list[dict]:
         return [
             e for e in events
-            if not e.get("flash_timepoint_id") and not e.get("flash_scene")
+            if not e.get("flash_timepoint_id")
         ]
 
     async def _rank_events(self, events: list[dict]) -> list[dict]:

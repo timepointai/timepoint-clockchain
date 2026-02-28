@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app.core.tdf import compute_tdf_hash
 

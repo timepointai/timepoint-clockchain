@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from pathlib import Path
 
 import asyncpg
 from fastapi import Request
@@ -50,18 +49,13 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
 
 
 class GraphManager:
-    def __init__(self, pool: asyncpg.Pool, data_dir: str = "./data"):
+    def __init__(self, pool: asyncpg.Pool, **_kwargs):
         self.pool = pool
-        self.data_dir = Path(data_dir)
 
     async def load(self):
         nc = await self.node_count()
         ec = await self.edge_count()
         logger.info("Graph loaded: %d nodes, %d edges", nc, ec)
-
-    async def save(self):
-        # No-op: mutations are immediately durable in Postgres
-        pass
 
     async def close(self):
         await self.pool.close()

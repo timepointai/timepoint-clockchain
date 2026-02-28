@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import asyncpg
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     source_type TEXT DEFAULT 'historical',
     confidence FLOAT,
     source_run_id TEXT,
-    tdf_hash TEXT
+    tdf_hash TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS edges (
