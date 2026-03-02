@@ -24,11 +24,13 @@ def _clear_settings_cache():
 
 @pytest.fixture(autouse=True)
 def _set_data_dir(tmp_path):
-    """Point DATA_DIR at a temp dir containing seeds.json."""
-    seeds_src = os.path.join(os.path.dirname(__file__), "..", "data", "seeds.json")
-    if os.path.exists(seeds_src):
-        import shutil
-        shutil.copy(seeds_src, tmp_path / "seeds.json")
+    """Point DATA_DIR at a temp dir containing seed files."""
+    import shutil
+    data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+    for name in ("seeds.jsonl", "seeds.json"):
+        src = os.path.join(data_dir, name)
+        if os.path.exists(src):
+            shutil.copy(src, tmp_path / name)
     os.environ["DATA_DIR"] = str(tmp_path)
     yield
     os.environ.pop("DATA_DIR", None)

@@ -109,20 +109,41 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
             logger.info("Database already has %d nodes, skipping seed", count)
             return
 
-    seeds_path = Path(data_dir) / "seeds.json"
-    bundled_path = Path("/app/seeds/seeds.json")
+    jsonl_path = Path(data_dir) / "seeds.jsonl"
+    json_path = Path(data_dir) / "seeds.json"
+    bundled_jsonl = Path("/app/seeds/seeds.jsonl")
+    bundled_json = Path("/app/seeds/seeds.json")
 
+    # Prefer JSONL (TDF canonical format), fall back to legacy JSON
     path = None
-    if seeds_path.exists():
-        path = seeds_path
-    elif bundled_path.exists():
-        path = bundled_path
+    use_jsonl = False
+    for candidate, is_jsonl in [
+        (jsonl_path, True), (bundled_jsonl, True),
+        (json_path, False), (bundled_json, False),
+    ]:
+        if candidate.exists():
+            path = candidate
+            use_jsonl = is_jsonl
+            break
 
     if path is None:
         logger.warning("No seeds file found, starting empty")
         return
 
     logger.info("Seeding database from %s", path)
+
+    if use_jsonl:
+        await _seed_from_jsonl(pool, path)
+    else:
+        await _seed_from_json(pool, path)
+
+    async with pool.acquire() as conn:
+        node_count = await conn.fetchval("SELECT count(*) FROM nodes")
+        edge_count = await conn.fetchval("SELECT count(*) FROM edges")
+    logger.info("Seeded %d nodes and %d edges", node_count, edge_count)
+
+
+async def _seed_from_json(pool: asyncpg.Pool, path: Path):
     with open(path) as f:
         seeds = json.load(f)
 
@@ -182,7 +203,87 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
                     edge.get("theme", ""),
                 )
 
+
+async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
+    records = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+
+    deferred_edges = []
+
     async with pool.acquire() as conn:
-        node_count = await conn.fetchval("SELECT count(*) FROM nodes")
-        edge_count = await conn.fetchval("SELECT count(*) FROM edges")
-    logger.info("Seeded %d nodes and %d edges", node_count, edge_count)
+        async with conn.transaction():
+            for rec in records:
+                node_id = rec["id"]
+                payload = rec.get("payload", {})
+                # Extract edges from payload before inserting node
+                edges = payload.pop("edges", [])
+                for edge in edges:
+                    deferred_edges.append({
+                        "source": node_id,
+                        "target": edge["target"],
+                        "type": edge.get("type", "thematic"),
+                        "weight": edge.get("weight", 1.0),
+                        "theme": edge.get("theme", ""),
+                    })
+
+                prov = rec.get("provenance", {})
+                tdf_hash = rec.get("tdf_hash") or compute_tdf_hash(payload)
+
+                await conn.execute(
+                    """
+                    INSERT INTO nodes (
+                        id, type, name, year, month, month_num, day, time,
+                        country, region, city, slug, layer, visibility,
+                        created_by, tags, one_liner, figures,
+                        flash_timepoint_id, created_at,
+                        confidence, source_run_id, tdf_hash
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8,
+                        $9, $10, $11, $12, $13, $14,
+                        $15, $16, $17, $18,
+                        $19, $20, $21, $22, $23
+                    )
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    node_id,
+                    payload.get("type", "event"),
+                    payload.get("name", ""),
+                    payload.get("year"),
+                    payload.get("month", ""),
+                    payload.get("month_num", 0),
+                    payload.get("day", 0),
+                    payload.get("time", ""),
+                    payload.get("country", ""),
+                    payload.get("region", ""),
+                    payload.get("city", ""),
+                    payload.get("slug", ""),
+                    payload.get("layer", 0),
+                    payload.get("visibility", "private"),
+                    payload.get("created_by", "system"),
+                    payload.get("tags", []),
+                    payload.get("one_liner", ""),
+                    payload.get("figures", []),
+                    prov.get("flash_id"),
+                    _parse_dt(rec.get("timestamp")),
+                    prov.get("confidence"),
+                    prov.get("run_id"),
+                    tdf_hash,
+                )
+
+            for edge in deferred_edges:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, theme)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (source, target, type) DO NOTHING
+                    """,
+                    edge["source"],
+                    edge["target"],
+                    edge["type"],
+                    edge["weight"],
+                    edge["theme"],
+                )

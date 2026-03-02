@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from app.core.auth import verify_service_key, get_user_id
 from app.core.graph import GraphManager, get_graph_manager
+from app.core.tdf_bridge import export_node_as_tdf
 from app.core.url import MONTH_TO_NUM
 from app.models.schemas import (
     BrowseResponse,
@@ -17,11 +19,12 @@ from app.models.schemas import (
 router = APIRouter(dependencies=[Depends(verify_service_key)])
 
 
-@router.get("/moments/{path:path}", response_model=MomentResponse)
+@router.get("/moments/{path:path}")
 async def get_moment(
     path: str,
     gm: GraphManager = Depends(get_graph_manager),
     user_id: str | None = Depends(get_user_id),
+    format: str = Query(default="default"),
 ):
     full_path = "/" + path.strip("/")
     node = await gm.get_node(full_path)
@@ -30,6 +33,11 @@ async def get_moment(
     if node.get("visibility") != "public":
         if not user_id or node.get("created_by") != user_id:
             raise HTTPException(status_code=404, detail="Moment not found")
+
+    if format == "tdf":
+        record = export_node_as_tdf(node)
+        return JSONResponse(record.model_dump(mode="json"))
+
     raw_edges = await gm.get_neighbors(full_path)
     node["edges"] = [
         {
