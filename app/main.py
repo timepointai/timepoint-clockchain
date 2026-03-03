@@ -43,6 +43,7 @@ async def lifespan(application: FastAPI):
     if settings.EXPANSION_ENABLED and settings.OPENROUTER_API_KEY:
         try:
             from app.workers.expander import GraphExpander
+
             expander = GraphExpander(
                 gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
             )
@@ -56,6 +57,7 @@ async def lifespan(application: FastAPI):
     if settings.DAILY_CRON_ENABLED:
         try:
             from app.workers.daily import DailyWorker
+
             daily = DailyWorker(gm, job_manager)
             daily_task = asyncio.create_task(daily.start())
             logger.info("Daily worker started")

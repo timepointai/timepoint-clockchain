@@ -2,8 +2,18 @@ import re
 import unicodedata
 
 MONTHS = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 ]
 MONTH_TO_NUM = {m: i + 1 for i, m in enumerate(MONTHS)}
 NUM_TO_MONTH = {i + 1: m for i, m in enumerate(MONTHS)}

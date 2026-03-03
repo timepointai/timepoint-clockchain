@@ -53,7 +53,9 @@ class ContentJudge:
 
         result = json.loads(text)
         verdict = result.get("verdict", "reject")
-        logger.info("Judge verdict for %r: %s (%s)", query, verdict, result.get("reason", ""))
+        logger.info(
+            "Judge verdict for %r: %s (%s)", query, verdict, result.get("reason", "")
+        )
 
         if verdict in ("approve", "sensitive"):
             return verdict

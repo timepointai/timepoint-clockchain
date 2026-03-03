@@ -7,6 +7,7 @@ Usage:
 Computes tdf_hash for every row where it is currently NULL, then adds
 a NOT NULL constraint so all future inserts must include a hash.
 """
+
 import asyncio
 import hashlib
 import json
@@ -17,17 +18,21 @@ import asyncpg
 
 
 _TDF_FIELDS = (
-    "year", "month", "day", "time",
-    "country", "region", "city", "slug",
-    "name", "one_liner",
+    "year",
+    "month",
+    "day",
+    "time",
+    "country",
+    "region",
+    "city",
+    "slug",
+    "name",
+    "one_liner",
 )
 
 
 def compute_tdf_hash(row: dict) -> str:
-    payload = {
-        k: str(row.get(k) or "").lower().strip()
-        for k in _TDF_FIELDS
-    }
+    payload = {k: str(row.get(k) or "").lower().strip() for k in _TDF_FIELDS}
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -42,15 +47,14 @@ async def migrate(database_url: str):
             h = compute_tdf_hash(dict(row))
             await conn.execute(
                 "UPDATE nodes SET tdf_hash = $1 WHERE id = $2",
-                h, row["id"],
+                h,
+                row["id"],
             )
 
         if rows:
             print(f"Backfilled {len(rows)} rows")
 
-        await conn.execute(
-            "ALTER TABLE nodes ALTER COLUMN tdf_hash SET NOT NULL"
-        )
+        await conn.execute("ALTER TABLE nodes ALTER COLUMN tdf_hash SET NOT NULL")
         print("Added NOT NULL constraint on tdf_hash")
 
     finally:

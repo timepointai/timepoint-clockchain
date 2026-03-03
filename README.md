@@ -1,5 +1,16 @@
 # timepoint-clockchain
 
+## Changes 2026-03-02 — TDF integration complete, branch protection locked
+
+- Added `timepoint-tdf` library dependency for cross-service data interchange
+- New `?format=tdf` query parameter on moments endpoint for TDF export
+- New `/ingest/tdf` endpoint for ingesting TDF records from sibling services
+- JSONL seed format support (`seeds.jsonl` preferred over legacy `seeds.json`)
+- Internal dedup hash (`compute_tdf_hash`) preserved alongside TDF interchange hash
+- Branch protection enforced: 1 approval required, last-pusher rule, no force push
+
+---
+
 **Temporal causal graph for AI agents.** PostgreSQL-backed directed graph of historical moments — canonical spatiotemporal URLs, typed causal edges, autonomous expansion, and browse/search/discovery APIs.
 
 > [!NOTE]

@@ -39,7 +39,9 @@ class DailyWorker:
         events = await self.gm.today_in_history(now.month, now.day)
         logger.info(
             "Today in history (%s/%s): %d events found",
-            now.month, now.day, len(events),
+            now.month,
+            now.day,
+            len(events),
         )
 
         if not events:
@@ -57,15 +59,14 @@ class DailyWorker:
             name = event.get("name", "")
             year = event.get("year", "")
             query = f"{name} ({year})"
-            job = self.jm.create_job(query=query, preset="balanced", visibility="public")
+            job = self.jm.create_job(
+                query=query, preset="balanced", visibility="public"
+            )
             await self.jm.process_job(job)
             logger.info("Daily generation queued: %s (job %s)", query, job.id)
 
     def get_sceneless_events(self, events: list[dict]) -> list[dict]:
-        return [
-            e for e in events
-            if not e.get("flash_timepoint_id")
-        ]
+        return [e for e in events if not e.get("flash_timepoint_id")]
 
     async def _rank_events(self, events: list[dict]) -> list[dict]:
         scored = []

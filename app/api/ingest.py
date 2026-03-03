@@ -44,8 +44,11 @@ async def ingest_subgraph(
     for edge in body.edges:
         try:
             await gm.add_edge(
-                edge.source, edge.target, edge.type,
-                weight=edge.weight, theme=edge.theme,
+                edge.source,
+                edge.target,
+                edge.type,
+                weight=edge.weight,
+                theme=edge.theme,
             )
             edge_count += 1
         except ValueError:

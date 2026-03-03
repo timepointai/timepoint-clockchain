@@ -77,7 +77,9 @@ class GraphExpander:
         for event in related:
             await self._add_event(event, source_node_id=node_id)
 
-        logger.info("Expansion complete: added %d events from %s", len(related), node_id)
+        logger.info(
+            "Expansion complete: added %d events from %s", len(related), node_id
+        )
 
     async def _generate_related(self, node: dict) -> list[dict]:
         prompt = EXPANSION_PROMPT.format(
@@ -163,8 +165,6 @@ class GraphExpander:
         edge_type = event.get("edge_type", "thematic")
         if edge_type in {"causes", "contemporaneous", "same_location", "thematic"}:
             try:
-                await self.gm.add_edge(
-                    source_node_id, path, edge_type, weight=0.5
-                )
+                await self.gm.add_edge(source_node_id, path, edge_type, weight=0.5)
             except ValueError:
                 pass

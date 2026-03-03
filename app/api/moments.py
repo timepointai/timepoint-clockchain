@@ -10,7 +10,6 @@ from app.core.url import MONTH_TO_NUM
 from app.models.schemas import (
     BrowseResponse,
     BrowseItem,
-    MomentResponse,
     MomentSummary,
     SearchResult,
     TodayResponse,
@@ -124,7 +123,9 @@ def _summary(node: dict) -> dict:
         "name": node.get("name", ""),
         "one_liner": node.get("one_liner", ""),
         "year": node.get("year", 0),
-        "month": node.get("month_num", node.get("month", 0)) if isinstance(node.get("month"), str) else node.get("month", 0),
+        "month": node.get("month_num", node.get("month", 0))
+        if isinstance(node.get("month"), str)
+        else node.get("month", 0),
         "day": node.get("day", 0),
         "layer": node.get("layer", 0),
         "visibility": node.get("visibility", "private"),

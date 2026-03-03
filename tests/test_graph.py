@@ -10,6 +10,7 @@ from app.core.graph import GraphManager
 async def graph_manager(tmp_path):
     seeds_src = os.path.join(os.path.dirname(__file__), "..", "data", "seeds.json")
     import shutil
+
     shutil.copy(seeds_src, tmp_path / "seeds.json")
 
     url = os.environ["DATABASE_URL"]
