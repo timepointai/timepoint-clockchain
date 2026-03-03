@@ -79,12 +79,12 @@ def parse_path(path: str) -> dict | None:
         return None
 
 
-def parse_partial_path(path: str) -> dict:
+def parse_partial_path(path: str) -> dict[str, int | str]:
     path = path.strip("/")
     if not path:
         return {}
     parts = path.split("/")
-    result = {}
+    result: dict[str, int | str] = {}
     for i, segment in enumerate(parts):
         if i >= len(PATH_SEGMENTS):
             break
