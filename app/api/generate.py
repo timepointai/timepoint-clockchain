@@ -80,7 +80,7 @@ async def publish_moment(
     if node is None:
         raise HTTPException(status_code=404, detail="Moment not found")
 
-    update_fields = {"visibility": body.visibility}
+    update_fields: dict[str, object] = {"visibility": body.visibility}
     if body.visibility == "public":
         update_fields["published_at"] = datetime.now(timezone.utc)
     await gm.update_node(full_path, **update_fields)
