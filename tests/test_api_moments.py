@@ -34,7 +34,9 @@ async def test_get_moment_caesar(auth_client):
 
 @pytest.mark.asyncio
 async def test_get_moment_not_found(auth_client):
-    resp = await auth_client.get("/api/v1/moments/9999/january/1/0000/x/x/x/nonexistent")
+    resp = await auth_client.get(
+        "/api/v1/moments/9999/january/1/0000/x/x/x/nonexistent"
+    )
     assert resp.status_code == 404
 
 

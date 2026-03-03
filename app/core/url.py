@@ -2,8 +2,18 @@ import re
 import unicodedata
 
 MONTHS = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 ]
 MONTH_TO_NUM = {m: i + 1 for i, m in enumerate(MONTHS)}
 NUM_TO_MONTH = {i + 1: m for i, m in enumerate(MONTHS)}
@@ -69,12 +79,12 @@ def parse_path(path: str) -> dict | None:
         return None
 
 
-def parse_partial_path(path: str) -> dict:
+def parse_partial_path(path: str) -> dict[str, int | str]:
     path = path.strip("/")
     if not path:
         return {}
     parts = path.split("/")
-    result = {}
+    result: dict[str, int | str] = {}
     for i, segment in enumerate(parts):
         if i >= len(PATH_SEGMENTS):
             break

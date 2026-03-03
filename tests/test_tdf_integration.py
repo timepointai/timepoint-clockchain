@@ -11,6 +11,7 @@ from app.core.tdf_bridge import make_tdf_record, tdf_to_node_attrs, export_node_
 async def graph_manager(tmp_path):
     data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
     import shutil
+
     seeds_jsonl = os.path.join(data_dir, "seeds.jsonl")
     if os.path.exists(seeds_jsonl):
         shutil.copy(seeds_jsonl, tmp_path / "seeds.jsonl")
@@ -31,6 +32,7 @@ async def graph_manager(tmp_path):
 
 # --- make_tdf_record tests ---
 
+
 def test_make_tdf_record_produces_valid_record():
     attrs = {
         "type": "event",
@@ -46,7 +48,9 @@ def test_make_tdf_record_produces_valid_record():
         "tags": ["test"],
         "one_liner": "A test event",
     }
-    record = make_tdf_record("/2020/january/1/1200/united-states/california/san-francisco/test-event", attrs)
+    record = make_tdf_record(
+        "/2020/january/1/1200/united-states/california/san-francisco/test-event", attrs
+    )
     assert record.tdf_hash
     assert len(record.tdf_hash) == 64  # SHA-256 hex
     assert record.source == "clockchain"
@@ -108,11 +112,14 @@ def test_provenance_keys_excluded_from_payload():
 
 def test_custom_generator():
     attrs = {"type": "event", "name": "Test"}
-    record = make_tdf_record("/test/gen", attrs, generator="timepoint-clockchain:expander")
+    record = make_tdf_record(
+        "/test/gen", attrs, generator="timepoint-clockchain:expander"
+    )
     assert record.provenance.generator == "timepoint-clockchain:expander"
 
 
 # --- tdf_to_node_attrs tests ---
+
 
 def test_tdf_to_node_attrs_roundtrip():
     attrs = {
@@ -132,6 +139,7 @@ def test_tdf_to_node_attrs_roundtrip():
 
 
 # --- export_node_as_tdf tests ---
+
 
 def test_export_node_as_tdf():
     node_dict = {
@@ -177,6 +185,7 @@ def test_export_node_as_tdf():
 
 # --- Database integration tests ---
 
+
 @pytest.mark.asyncio
 async def test_add_node_populates_tdf_hash(graph_manager):
     await graph_manager.add_node(
@@ -210,6 +219,7 @@ async def test_seed_from_jsonl_loads_edges(graph_manager):
 
 # --- API tests ---
 
+
 @pytest.mark.asyncio
 async def test_format_tdf_returns_tdf_record(auth_client):
     resp = await auth_client.get(
@@ -222,7 +232,10 @@ async def test_format_tdf_returns_tdf_record(auth_client):
     assert data["source"] == "clockchain"
     assert "provenance" in data
     assert "payload" in data
-    assert data["id"] == "/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar"
+    assert (
+        data["id"]
+        == "/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar"
+    )
 
 
 @pytest.mark.asyncio

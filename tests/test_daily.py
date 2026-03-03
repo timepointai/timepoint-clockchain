@@ -30,18 +30,20 @@ async def graph_manager(tmp_path):
 @pytest.fixture()
 def job_manager(graph_manager):
     flash_client = MagicMock(spec=FlashClient)
-    flash_client.generate_sync = AsyncMock(return_value={
-        "id": "flash-daily-uuid",
-        "name": "Test Event",
-        "slug": "test-event",
-        "year": 1969,
-        "month": "july",
-        "day": 20,
-        "time": "2056",
-        "country": "united-states",
-        "region": "florida",
-        "city": "cape-canaveral",
-    })
+    flash_client.generate_sync = AsyncMock(
+        return_value={
+            "id": "flash-daily-uuid",
+            "name": "Test Event",
+            "slug": "test-event",
+            "year": 1969,
+            "month": "july",
+            "day": 20,
+            "time": "2056",
+            "country": "united-states",
+            "region": "florida",
+            "city": "cape-canaveral",
+        }
+    )
     return JobManager(graph_manager=graph_manager, flash_client=flash_client)
 
 

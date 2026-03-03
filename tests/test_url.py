@@ -7,17 +7,33 @@ def test_slugify():
 
 
 def test_build_path():
-    path = build_path(1969, 7, 20, "2056", "United States", "Florida", "Cape Canaveral", "Apollo 11 Moon Landing")
-    assert path == "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
+    path = build_path(
+        1969,
+        7,
+        20,
+        "2056",
+        "United States",
+        "Florida",
+        "Cape Canaveral",
+        "Apollo 11 Moon Landing",
+    )
+    assert (
+        path
+        == "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
+    )
 
 
 def test_build_path_negative_year():
-    path = build_path(-44, 3, 15, "1030", "Italy", "Lazio", "Rome", "Assassination of Julius Caesar")
+    path = build_path(
+        -44, 3, 15, "1030", "Italy", "Lazio", "Rome", "Assassination of Julius Caesar"
+    )
     assert path == "/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar"
 
 
 def test_parse_path():
-    result = parse_path("/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar")
+    result = parse_path(
+        "/-44/march/15/1030/italy/lazio/rome/assassination-of-julius-caesar"
+    )
     assert result is not None
     assert result["year"] == -44
     assert result["month"] == 3
@@ -27,12 +43,20 @@ def test_parse_path():
 
 
 def test_parse_path_round_trip():
-    path = build_path(1945, 7, 16, "0530", "United States", "New Mexico", "Socorro", "Trinity Test")
+    path = build_path(
+        1945, 7, 16, "0530", "United States", "New Mexico", "Socorro", "Trinity Test"
+    )
     parsed = parse_path(path)
     assert parsed is not None
     rebuilt = build_path(
-        parsed["year"], parsed["month"], parsed["day"], parsed["time"],
-        parsed["country"], parsed["region"], parsed["city"], parsed["slug"]
+        parsed["year"],
+        parsed["month"],
+        parsed["day"],
+        parsed["time"],
+        parsed["country"],
+        parsed["region"],
+        parsed["city"],
+        parsed["slug"],
     )
     assert rebuilt == path
 

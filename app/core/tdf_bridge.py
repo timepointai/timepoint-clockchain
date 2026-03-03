@@ -4,8 +4,12 @@ from timepoint_tdf import TDFRecord, TDFProvenance, from_clockchain
 
 # Fields that are provenance/meta, not payload content
 _PROVENANCE_KEYS = {
-    "tdf_hash", "confidence", "source_run_id",
-    "flash_timepoint_id", "created_at", "published_at",
+    "tdf_hash",
+    "confidence",
+    "source_run_id",
+    "flash_timepoint_id",
+    "created_at",
+    "published_at",
 }
 
 

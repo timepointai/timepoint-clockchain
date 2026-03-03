@@ -41,9 +41,7 @@ MOCK_RESPONSE = [
     },
 ]
 
-OPENROUTER_RESPONSE = {
-    "choices": [{"message": {"content": json.dumps(MOCK_RESPONSE)}}]
-}
+OPENROUTER_RESPONSE = {"choices": [{"message": {"content": json.dumps(MOCK_RESPONSE)}}]}
 
 
 def _patch_httpx():

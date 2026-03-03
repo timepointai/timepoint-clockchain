@@ -45,8 +45,14 @@ async def test_auto_link_contemporaneous(graph_manager):
         "/1969/july/16/0932/united-states/florida/cape-canaveral/apollo-11-launch"
     )
     neighbor_paths = [n["path"] for n in neighbors]
-    assert "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing" in neighbor_paths
-    assert "/1969/november/14/1122/united-states/florida/cape-canaveral/apollo-12-lightning-launch" in neighbor_paths
+    assert (
+        "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
+        in neighbor_paths
+    )
+    assert (
+        "/1969/november/14/1122/united-states/florida/cape-canaveral/apollo-12-lightning-launch"
+        in neighbor_paths
+    )
 
 
 @pytest.mark.asyncio
@@ -114,8 +120,12 @@ async def test_bidirectional_edges(graph_manager):
         visibility="public",
     )
 
-    new_path = "/1969/july/16/0932/united-states/florida/cape-canaveral/apollo-11-launch"
-    moon_path = "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
+    new_path = (
+        "/1969/july/16/0932/united-states/florida/cape-canaveral/apollo-11-launch"
+    )
+    moon_path = (
+        "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing"
+    )
 
     # Check edge exists both ways
     assert await graph_manager.has_edge(new_path, moon_path)

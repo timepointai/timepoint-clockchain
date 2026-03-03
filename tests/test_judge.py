@@ -10,7 +10,9 @@ def _patch_httpx(verdict, reason):
     """Patch httpx.AsyncClient used as async context manager."""
     resp = MagicMock()
     resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"verdict": verdict, "reason": reason})}}]
+        "choices": [
+            {"message": {"content": json.dumps({"verdict": verdict, "reason": reason})}}
+        ]
     }
 
     inner = MagicMock()

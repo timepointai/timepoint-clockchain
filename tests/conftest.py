@@ -17,6 +17,7 @@ os.environ.setdefault(
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     from app.core.config import get_settings
+
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -26,6 +27,7 @@ def _clear_settings_cache():
 def _set_data_dir(tmp_path):
     """Point DATA_DIR at a temp dir containing seed files."""
     import shutil
+
     data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
     for name in ("seeds.jsonl", "seeds.json"):
         src = os.path.join(data_dir, name)
@@ -41,6 +43,7 @@ async def _init_and_truncate():
     """Ensure schema exists and truncate tables before each test."""
     import asyncpg
     from app.core.db import SCHEMA_DDL
+
     url = os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(url)
     try:
@@ -59,6 +62,7 @@ def service_key():
 @pytest.fixture()
 async def client():
     from app.main import app
+
     transport = ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -68,6 +72,7 @@ async def client():
 @pytest.fixture()
 async def auth_client(service_key):
     from app.main import app
+
     transport = ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with AsyncClient(

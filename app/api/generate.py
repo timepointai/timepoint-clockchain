@@ -31,12 +31,17 @@ async def generate_moment(
     # Content judge (Phase 5) — if available
     try:
         from app.workers.judge import ContentJudge
+
         settings = get_settings()
         if settings.OPENROUTER_API_KEY:
-            judge = ContentJudge(settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL)
+            judge = ContentJudge(
+                settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+            )
             verdict = await judge.screen(body.query)
             if verdict == "reject":
-                raise HTTPException(status_code=400, detail="Query rejected by content judge")
+                raise HTTPException(
+                    status_code=400, detail="Query rejected by content judge"
+                )
     except ImportError:
         pass
 
@@ -75,7 +80,7 @@ async def publish_moment(
     if node is None:
         raise HTTPException(status_code=404, detail="Moment not found")
 
-    update_fields = {"visibility": body.visibility}
+    update_fields: dict[str, object] = {"visibility": body.visibility}
     if body.visibility == "public":
         update_fields["published_at"] = datetime.now(timezone.utc)
     await gm.update_node(full_path, **update_fields)
@@ -95,7 +100,9 @@ async def bulk_generate(
 
     results = []
     for req in body.queries:
-        job = jm.create_job(query=req.query, preset=req.preset, visibility=req.visibility)
+        job = jm.create_job(
+            query=req.query, preset=req.preset, visibility=req.visibility
+        )
         background_tasks.add_task(jm.process_job, job)
         results.append(job.to_dict())
     return results
@@ -116,7 +123,9 @@ async def expand_once(
     before_nodes = await gm.node_count()
     before_edges = await gm.edge_count()
 
-    expander = GraphExpander(gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL)
+    expander = GraphExpander(
+        gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+    )
     await expander._expand_once()
 
     after_nodes = await gm.node_count()

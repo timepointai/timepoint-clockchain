@@ -118,8 +118,10 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
     path = None
     use_jsonl = False
     for candidate, is_jsonl in [
-        (jsonl_path, True), (bundled_jsonl, True),
-        (json_path, False), (bundled_json, False),
+        (jsonl_path, True),
+        (bundled_jsonl, True),
+        (json_path, False),
+        (bundled_json, False),
     ]:
         if candidate.exists():
             path = candidate
@@ -222,13 +224,15 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                 # Extract edges from payload before inserting node
                 edges = payload.pop("edges", [])
                 for edge in edges:
-                    deferred_edges.append({
-                        "source": node_id,
-                        "target": edge["target"],
-                        "type": edge.get("type", "thematic"),
-                        "weight": edge.get("weight", 1.0),
-                        "theme": edge.get("theme", ""),
-                    })
+                    deferred_edges.append(
+                        {
+                            "source": node_id,
+                            "target": edge["target"],
+                            "type": edge.get("type", "thematic"),
+                            "weight": edge.get("weight", 1.0),
+                            "theme": edge.get("theme", ""),
+                        }
+                    )
 
                 prov = rec.get("provenance", {})
                 tdf_hash = rec.get("tdf_hash") or compute_tdf_hash(payload)
