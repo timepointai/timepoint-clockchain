@@ -16,6 +16,19 @@ async def verify_service_key(
     return x_service_key
 
 
+async def optional_verify_service_key(
+    x_service_key: str | None = Header(None, alias="X-Service-Key"),
+) -> str | None:
+    if x_service_key is None:
+        return None
+    settings = get_settings()
+    if not settings.SERVICE_API_KEY:
+        raise HTTPException(status_code=503, detail="Service key not configured")
+    if not hmac.compare_digest(x_service_key, settings.SERVICE_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid service key")
+    return x_service_key
+
+
 async def get_user_id(
     x_user_id: str | None = Header(None, alias="X-User-Id"),
 ) -> str | None:

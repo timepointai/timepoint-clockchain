@@ -72,6 +72,33 @@ class GraphStatsResponse(BaseModel):
     source_type_counts: dict[str, int] = Field(default_factory=dict)
 
 
+class MomentListItem(BaseModel):
+    path: str
+    name: str
+    one_liner: str = ""
+    year: int | None = None
+    month: str = ""
+    day: int = 0
+    country: str = ""
+    region: str = ""
+    city: str = ""
+    source_type: str = "historical"
+    confidence: float | None = None
+
+
+class PaginatedMomentsResponse(BaseModel):
+    items: list[MomentListItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class EnhancedStatsResponse(GraphStatsResponse):
+    date_range: dict = Field(default_factory=dict)
+    avg_confidence: float | None = None
+    last_updated: str | None = None
+
+
 class GenerateRequest(BaseModel):
     query: str
     preset: str = "default"

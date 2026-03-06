@@ -4,6 +4,7 @@ from app.core.auth import verify_service_key, get_user_id
 from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.jobs import JobManager
+from app.core.rate_limit import limiter
 from app.models.schemas import (
     BulkGenerateRequest,
     GenerateRequest,
@@ -22,7 +23,9 @@ async def get_job_manager(request: Request) -> JobManager:
 
 
 @router.post("/generate", response_model=JobResponse)
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def generate_moment(
+    request: Request,
     body: GenerateRequest,
     background_tasks: BackgroundTasks,
     jm: JobManager = Depends(get_job_manager),
@@ -56,7 +59,9 @@ async def generate_moment(
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
 async def get_job(
+    request: Request,
     job_id: str,
     jm: JobManager = Depends(get_job_manager),
 ):
@@ -67,7 +72,9 @@ async def get_job(
 
 
 @router.post("/moments/{path:path}/publish")
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def publish_moment(
+    request: Request,
     path: str,
     body: PublishRequest = PublishRequest(),
     gm: GraphManager = Depends(get_graph_manager),
@@ -88,7 +95,9 @@ async def publish_moment(
 
 
 @router.post("/bulk-generate", response_model=list[JobResponse])
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def bulk_generate(
+    request: Request,
     body: BulkGenerateRequest,
     background_tasks: BackgroundTasks,
     jm: JobManager = Depends(get_job_manager),
@@ -109,6 +118,7 @@ async def bulk_generate(
 
 
 @router.post("/expand-once")
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def expand_once(
     request: Request,
     gm: GraphManager = Depends(get_graph_manager),
@@ -140,7 +150,9 @@ async def expand_once(
 
 
 @router.post("/index")
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def index_moment(
+    request: Request,
     body: dict,
     gm: GraphManager = Depends(get_graph_manager),
 ):
