@@ -42,11 +42,13 @@ class GraphExpander:
         api_key: str,
         model: str = "google/gemini-2.0-flash-001",
         interval_seconds: int = 300,
+        job_manager=None,
     ):
         self.gm = graph_manager
         self.api_key = api_key
         self.model = model
         self.interval = interval_seconds
+        self.jm = job_manager
 
     async def start(self):
         logger.info("Graph expander starting (interval=%ds)", self.interval)
@@ -74,11 +76,14 @@ class GraphExpander:
         logger.info("Expanding from node: %s", node_id)
         related = await self._generate_related(node)
 
+        added = 0
         for event in related:
-            await self._add_event(event, source_node_id=node_id)
+            ok = await self._add_event(event, source_node_id=node_id)
+            if ok:
+                added += 1
 
         logger.info(
-            "Expansion complete: added %d events from %s", len(related), node_id
+            "Expansion complete: added %d events from %s", added, node_id
         )
 
     async def _generate_related(self, node: dict) -> list[dict]:
@@ -118,7 +123,54 @@ class GraphExpander:
 
         return json.loads(text)
 
-    async def _add_event(self, event: dict, source_node_id: str):
+    async def _add_event(self, event: dict, source_node_id: str) -> bool:
+        name = event.get("name", "")
+        year = event.get("year", "")
+        edge_type = event.get("edge_type", "thematic")
+
+        if self.jm:
+            return await self._add_via_flash(event, source_node_id)
+
+        return await self._add_direct(event, source_node_id)
+
+    async def _add_via_flash(self, event: dict, source_node_id: str) -> bool:
+        name = event.get("name", "")
+        year = event.get("year", "")
+        country = event.get("country", "")
+        city = event.get("city", "")
+
+        query = f"{name}, {year}, {country}, {city}".strip(", ")
+        logger.info("Rendering via Flash: %s", query)
+
+        try:
+            job = self.jm.create_job(
+                query=query, preset="balanced", visibility="public"
+            )
+            await self.jm.process_job(job)
+
+            if job.status == "completed" and job.path:
+                # Add edge from source to the new Flash-rendered node
+                edge_type = event.get("edge_type", "thematic")
+                if edge_type in {"causes", "contemporaneous", "same_location", "thematic"}:
+                    try:
+                        await self.gm.add_edge(
+                            source_node_id, job.path, edge_type, weight=0.5
+                        )
+                    except ValueError:
+                        pass
+                logger.info("Flash render complete: %s -> %s", query, job.path)
+                return True
+            else:
+                logger.warning(
+                    "Flash render failed for %s: %s", query, job.error
+                )
+                return False
+        except Exception as e:
+            logger.error("Flash render error for %s: %s", query, e)
+            return False
+
+    async def _add_direct(self, event: dict, source_node_id: str) -> bool:
+        """Fallback: add node directly without Flash (layer 1)."""
         from app.core.url import build_path, MONTH_TO_NUM
 
         month_str = str(event.get("month", "january")).lower()
@@ -136,7 +188,7 @@ class GraphExpander:
         )
 
         if await self.gm.get_node(path):
-            return
+            return False
 
         await self.gm.add_node(
             path,
@@ -168,3 +220,4 @@ class GraphExpander:
                 await self.gm.add_edge(source_node_id, path, edge_type, weight=0.5)
             except ValueError:
                 pass
+        return True
