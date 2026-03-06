@@ -23,26 +23,26 @@
       "created_at": "2026-02-17T00:00:00Z"
     },
     {
-      "id": "/1945/july/16/0530/united-states/new-mexico/socorro/trinity-test",
+      "id": "/1971/november/15/0900/united-states/california/santa-clara/invention-of-the-microprocessor",
       "type": "event",
-      "name": "Trinity Test",
-      "year": 1945,
-      "month": "july",
-      "month_num": 7,
-      "day": 16,
-      "time": "0530",
+      "name": "Invention of the Microprocessor",
+      "year": 1971,
+      "month": "november",
+      "month_num": 11,
+      "day": 15,
+      "time": "0900",
       "country": "united-states",
-      "region": "new-mexico",
-      "city": "socorro",
-      "slug": "trinity-test",
+      "region": "california",
+      "city": "santa-clara",
+      "slug": "invention-of-the-microprocessor",
       "layer": 1,
       "visibility": "public",
       "created_by": "system",
-      "tags": ["nuclear", "world-war-ii", "science", "manhattan-project"],
-      "one_liner": "The world's first nuclear device detonates in the New Mexico desert",
-      "figures": ["J. Robert Oppenheimer", "Kenneth Bainbridge", "Leslie Groves"],
+      "tags": ["technology", "computing", "semiconductor", "intel"],
+      "one_liner": "Intel unveils the 4004, the first commercial microprocessor, launching the personal computing revolution",
+      "figures": ["Federico Faggin", "Ted Hoff", "Stanley Mazor", "Masatoshi Shima"],
       "flash_timepoint_id": null,
-      "created_at": "2026-02-17T00:00:00Z"
+      "created_at": "2026-03-06T00:00:00Z"
     },
     {
       "id": "/1969/november/14/1122/united-states/florida/cape-canaveral/apollo-12-lightning-launch",
@@ -127,11 +127,11 @@
       "theme": "apollo-program"
     },
     {
-      "source": "/1945/july/16/0530/united-states/new-mexico/socorro/trinity-test",
-      "target": "/1969/july/20/2056/united-states/florida/cape-canaveral/apollo-11-moon-landing",
+      "source": "/1971/november/15/0900/united-states/california/santa-clara/invention-of-the-microprocessor",
+      "target": "/2016/march/9/1530/south-korea/seoul/seoul/alphago-move-37",
       "type": "causes",
-      "weight": 0.6,
-      "theme": "cold-war-space-race"
+      "weight": 0.7,
+      "theme": "computing-revolution"
     }
   ]
 }
