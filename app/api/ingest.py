@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.core.auth import verify_service_key
+from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
+from app.core.rate_limit import limiter
 from app.core.tdf_bridge import tdf_to_node_attrs
 from app.models.schemas import SubgraphIngestRequest, SubgraphIngestResponse
 from timepoint_tdf import TDFRecord
@@ -10,7 +12,9 @@ router = APIRouter(dependencies=[Depends(verify_service_key)])
 
 
 @router.post("/ingest/subgraph", response_model=SubgraphIngestResponse)
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def ingest_subgraph(
+    request: Request,
     body: SubgraphIngestRequest,
     gm: GraphManager = Depends(get_graph_manager),
 ):
@@ -58,7 +62,9 @@ async def ingest_subgraph(
 
 
 @router.post("/ingest/tdf")
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_WRITE)
 async def ingest_tdf(
+    request: Request,
     records: list[dict],
     gm: GraphManager = Depends(get_graph_manager),
 ):

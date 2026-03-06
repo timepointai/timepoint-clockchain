@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.core.auth import verify_service_key, get_user_id
+from app.core.auth import verify_service_key
+from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
-from app.core.tdf_bridge import export_node_as_tdf
-from app.core.url import MONTH_TO_NUM
+from app.core.rate_limit import limiter
 from app.models.schemas import (
     BrowseResponse,
     BrowseItem,
@@ -18,47 +17,17 @@ from app.models.schemas import (
 router = APIRouter(dependencies=[Depends(verify_service_key)])
 
 
-@router.get("/moments/{path:path}")
-async def get_moment(
-    path: str,
-    gm: GraphManager = Depends(get_graph_manager),
-    user_id: str | None = Depends(get_user_id),
-    format: str = Query(default="default"),
-):
-    full_path = "/" + path.strip("/")
-    node = await gm.get_node(full_path)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Moment not found")
-    if node.get("visibility") != "public":
-        if not user_id or node.get("created_by") != user_id:
-            raise HTTPException(status_code=404, detail="Moment not found")
-
-    if format == "tdf":
-        record = export_node_as_tdf(node)
-        return JSONResponse(record.model_dump(mode="json"))
-
-    raw_edges = await gm.get_neighbors(full_path)
-    node["edges"] = [
-        {
-            "source": full_path,
-            "target": e["path"],
-            "edge_type": e.get("edge_type", ""),
-            "weight": e.get("weight", 1.0),
-            "theme": e.get("theme", ""),
-        }
-        for e in raw_edges
-    ]
-    return _normalize_node(node)
-
-
 @router.get("/browse", response_model=BrowseResponse)
-async def browse_root(gm: GraphManager = Depends(get_graph_manager)):
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
+async def browse_root(request: Request, gm: GraphManager = Depends(get_graph_manager)):
     items = await gm.browse("")
     return BrowseResponse(prefix="/", items=[BrowseItem(**i) for i in items])
 
 
 @router.get("/browse/{path:path}", response_model=BrowseResponse)
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
 async def browse_path(
+    request: Request,
     path: str,
     gm: GraphManager = Depends(get_graph_manager),
 ):
@@ -68,7 +37,8 @@ async def browse_path(
 
 
 @router.get("/today", response_model=TodayResponse)
-async def today_in_history(gm: GraphManager = Depends(get_graph_manager)):
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
+async def today_in_history(request: Request, gm: GraphManager = Depends(get_graph_manager)):
     now = datetime.now(timezone.utc)
     events = await gm.today_in_history(now.month, now.day)
     return TodayResponse(
@@ -79,7 +49,8 @@ async def today_in_history(gm: GraphManager = Depends(get_graph_manager)):
 
 
 @router.get("/random", response_model=MomentSummary)
-async def random_moment(gm: GraphManager = Depends(get_graph_manager)):
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
+async def random_moment(request: Request, gm: GraphManager = Depends(get_graph_manager)):
     node = await gm.random_public()
     if node is None:
         raise HTTPException(status_code=404, detail="No public moments available")
@@ -87,7 +58,9 @@ async def random_moment(gm: GraphManager = Depends(get_graph_manager)):
 
 
 @router.get("/search", response_model=list[SearchResult])
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH_READ)
 async def search_moments(
+    request: Request,
     q: str = Query(..., min_length=1),
     gm: GraphManager = Depends(get_graph_manager),
 ):
@@ -101,20 +74,6 @@ async def search_moments(
         )
         for r in results
     ]
-
-
-def _month_to_int(val) -> int:
-    if isinstance(val, int):
-        return val
-    if isinstance(val, str):
-        return MONTH_TO_NUM.get(val.lower(), 0)
-    return 0
-
-
-def _normalize_node(node: dict) -> dict:
-    node = dict(node)
-    node["month"] = node.get("month_num", 0) or _month_to_int(node.get("month", 0))
-    return node
 
 
 def _summary(node: dict) -> dict:
