@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     flash_slug TEXT DEFAULT '',
     flash_share_url TEXT DEFAULT '',
     era TEXT DEFAULT '',
+    image_url TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     published_at TIMESTAMPTZ,
     source_type TEXT DEFAULT 'historical',
@@ -102,6 +103,18 @@ async def init_schema(pool: asyncpg.Pool):
     logger.info("Database schema initialized")
 
 
+async def run_migrations(pool: asyncpg.Pool):
+    async with pool.acquire() as conn:
+        # 003: add image_url column
+        col_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'image_url'"
+        )
+        if not col_exists:
+            await conn.execute("ALTER TABLE nodes ADD COLUMN image_url TEXT")
+            logger.info("Migration 003: added image_url column")
+
+
 async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
     async with pool.acquire() as conn:
         count = await conn.fetchval("SELECT count(*) FROM nodes")
@@ -118,10 +131,8 @@ async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
     path = None
     use_jsonl = False
     for candidate, is_jsonl in [
-        (jsonl_path, True),
-        (bundled_jsonl, True),
-        (json_path, False),
-        (bundled_json, False),
+        (jsonl_path, True), (bundled_jsonl, True),
+        (json_path, False), (bundled_json, False),
     ]:
         if candidate.exists():
             path = candidate
@@ -224,15 +235,13 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                 # Extract edges from payload before inserting node
                 edges = payload.pop("edges", [])
                 for edge in edges:
-                    deferred_edges.append(
-                        {
-                            "source": node_id,
-                            "target": edge["target"],
-                            "type": edge.get("type", "thematic"),
-                            "weight": edge.get("weight", 1.0),
-                            "theme": edge.get("theme", ""),
-                        }
-                    )
+                    deferred_edges.append({
+                        "source": node_id,
+                        "target": edge["target"],
+                        "type": edge.get("type", "thematic"),
+                        "weight": edge.get("weight", 1.0),
+                        "theme": edge.get("theme", ""),
+                    })
 
                 prov = rec.get("provenance", {})
                 tdf_hash = rec.get("tdf_hash") or compute_tdf_hash(payload)
