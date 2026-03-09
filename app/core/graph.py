@@ -11,34 +11,12 @@ logger = logging.getLogger("clockchain.graph")
 VALID_EDGE_TYPES = {"causes", "contemporaneous", "same_location", "thematic"}
 
 NODE_COLUMNS = [
-    "id",
-    "type",
-    "name",
-    "year",
-    "month",
-    "month_num",
-    "day",
-    "time",
-    "country",
-    "region",
-    "city",
-    "slug",
-    "layer",
-    "visibility",
-    "created_by",
-    "tags",
-    "one_liner",
-    "figures",
-    "flash_timepoint_id",
-    "flash_slug",
-    "flash_share_url",
-    "era",
-    "created_at",
-    "published_at",
-    "source_type",
-    "confidence",
-    "source_run_id",
-    "tdf_hash",
+    "id", "type", "name", "year", "month", "month_num", "day", "time",
+    "country", "region", "city", "slug", "layer", "visibility",
+    "created_by", "tags", "one_liner", "figures",
+    "flash_timepoint_id", "flash_slug", "flash_share_url", "era", "image_url",
+    "created_at", "published_at",
+    "source_type", "confidence", "source_run_id", "tdf_hash",
 ]
 
 
@@ -93,9 +71,7 @@ class GraphManager:
 
     async def add_node(self, node_id: str, **attrs) -> None:
         if not attrs.get("tdf_hash"):
-            attrs["tdf_hash"] = compute_tdf_hash(
-                {"slug": node_id.split("/")[-1] if "/" in node_id else node_id, **attrs}
-            )
+            attrs["tdf_hash"] = compute_tdf_hash({"slug": node_id.split("/")[-1] if "/" in node_id else node_id, **attrs})
 
         async with self.pool.acquire() as conn:
             tags = attrs.get("tags", [])
@@ -112,13 +88,15 @@ class GraphManager:
                     country, region, city, slug, layer, visibility,
                     created_by, tags, one_liner, figures,
                     flash_timepoint_id, flash_slug, flash_share_url, era,
+                    image_url,
                     created_at, source_type, confidence, source_run_id, tdf_hash
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
                     $15, $16, $17, $18,
-                    $19, $20, $21, $22, $23,
-                    $24, $25, $26, $27
+                    $19, $20, $21, $22,
+                    $23,
+                    $24, $25, $26, $27, $28
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -142,6 +120,7 @@ class GraphManager:
                     flash_slug = EXCLUDED.flash_slug,
                     flash_share_url = EXCLUDED.flash_share_url,
                     era = EXCLUDED.era,
+                    image_url = EXCLUDED.image_url,
                     source_type = EXCLUDED.source_type,
                     confidence = EXCLUDED.confidence,
                     source_run_id = EXCLUDED.source_run_id,
@@ -169,6 +148,7 @@ class GraphManager:
                 attrs.get("flash_slug", ""),
                 attrs.get("flash_share_url", ""),
                 attrs.get("era", ""),
+                attrs.get("image_url"),
                 _parse_dt(attrs.get("created_at")),
                 attrs.get("source_type", "historical"),
                 attrs.get("confidence"),
@@ -179,9 +159,7 @@ class GraphManager:
 
     async def add_edge(self, src: str, tgt: str, edge_type: str, **attrs) -> None:
         if edge_type not in VALID_EDGE_TYPES:
-            raise ValueError(
-                f"Invalid edge type: {edge_type}. Must be one of {VALID_EDGE_TYPES}"
-            )
+            raise ValueError(f"Invalid edge type: {edge_type}. Must be one of {VALID_EDGE_TYPES}")
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -189,9 +167,7 @@ class GraphManager:
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (source, target, type) DO NOTHING
                 """,
-                src,
-                tgt,
-                edge_type,
+                src, tgt, edge_type,
                 attrs.get("weight", 1.0),
                 attrs.get("theme", ""),
             )
@@ -237,7 +213,7 @@ class GraphManager:
         for row in rows:
             node_path = row["id"].strip("/")
             if prefix:
-                remainder = node_path[len(prefix) :].strip("/")
+                remainder = node_path[len(prefix):].strip("/")
             else:
                 remainder = node_path
             if not remainder:
@@ -252,7 +228,6 @@ class GraphManager:
 
     async def today_in_history(self, month: int, day: int) -> list[dict]:
         from app.core.url import NUM_TO_MONTH
-
         month_name = NUM_TO_MONTH.get(month, "")
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -262,9 +237,7 @@ class GraphManager:
                   AND day = $1
                   AND (lower(month) = $2 OR month_num = $3)
                 """,
-                day,
-                month_name,
-                month,
+                day, month_name, month,
             )
         return [_row_to_dict(row) for row in rows]
 
@@ -304,8 +277,7 @@ class GraphManager:
                 ORDER BY score DESC
                 LIMIT $2
                 """,
-                pattern,
-                limit,
+                pattern, limit,
             )
         results = []
         for row in rows:
@@ -357,97 +329,17 @@ class GraphManager:
             source_type_rows = await conn.fetch(
                 "SELECT coalesce(source_type, 'historical') AS source_type, count(*) AS cnt FROM nodes GROUP BY source_type"
             )
+            nodes_with_images = await conn.fetchval(
+                "SELECT count(*) FROM nodes WHERE image_url IS NOT NULL AND image_url != ''"
+            )
         return {
             "total_nodes": total_nodes,
             "total_edges": total_edges,
             "layer_counts": {row["layer"]: row["cnt"] for row in layer_rows},
             "edge_type_counts": {row["type"]: row["cnt"] for row in edge_type_rows},
-            "source_type_counts": {
-                row["source_type"]: row["cnt"] for row in source_type_rows
-            },
+            "source_type_counts": {row["source_type"]: row["cnt"] for row in source_type_rows},
+            "nodes_with_images": nodes_with_images,
         }
-
-    async def list_moments(
-        self,
-        *,
-        limit: int = 20,
-        offset: int = 0,
-        year_from: int | None = None,
-        year_to: int | None = None,
-        entity: str | None = None,
-        query: str | None = None,
-        min_confidence: float | None = None,
-        sort: str = "year",
-        visibility: str = "public",
-    ) -> tuple[list[dict], int]:
-        conditions = ["visibility = $1"]
-        params: list[object] = [visibility]
-        idx = 2
-
-        if year_from is not None:
-            conditions.append(f"year >= ${idx}")
-            params.append(year_from)
-            idx += 1
-        if year_to is not None:
-            conditions.append(f"year <= ${idx}")
-            params.append(year_to)
-            idx += 1
-        if entity:
-            pattern = f"%{entity}%"
-            conditions.append(
-                f"(name ILIKE ${idx} OR EXISTS (SELECT 1 FROM unnest(figures) AS f WHERE f ILIKE ${idx}))"
-            )
-            params.append(pattern)
-            idx += 1
-        if query:
-            pattern = f"%{query}%"
-            conditions.append(
-                f"(name ILIKE ${idx} OR one_liner ILIKE ${idx} OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE ${idx}))"
-            )
-            params.append(pattern)
-            idx += 1
-        if min_confidence is not None:
-            conditions.append(f"confidence >= ${idx}")
-            params.append(min_confidence)
-            idx += 1
-
-        where = " AND ".join(conditions)
-
-        sort_col = "year"
-        if sort == "created_at":
-            sort_col = "created_at DESC"
-        elif sort == "name":
-            sort_col = "name"
-        elif sort == "confidence":
-            sort_col = "confidence DESC NULLS LAST"
-
-        async with self.pool.acquire() as conn:
-            total = await conn.fetchval(f"SELECT count(*) FROM nodes WHERE {where}", *params)
-
-            params.append(limit)
-            params.append(offset)
-            rows = await conn.fetch(
-                f"SELECT * FROM nodes WHERE {where} ORDER BY {sort_col} LIMIT ${idx} OFFSET ${idx + 1}",
-                *params,
-            )
-
-        return [_row_to_dict(row) for row in rows], total
-
-    async def enhanced_stats(self) -> dict:
-        base = await self.stats()
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT min(year) AS min_year, max(year) AS max_year, "
-                "avg(confidence) AS avg_confidence, max(created_at) AS last_updated "
-                "FROM nodes"
-            )
-        base["date_range"] = {
-            "min_year": row["min_year"],
-            "max_year": row["max_year"],
-        }
-        base["avg_confidence"] = float(row["avg_confidence"]) if row["avg_confidence"] is not None else None
-        base["last_updated"] = row["last_updated"].isoformat() if row["last_updated"] else None
-        return base
 
     async def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
         async with self.pool.acquire() as conn:
@@ -486,8 +378,7 @@ class GraphManager:
         async with self.pool.acquire() as conn:
             row = await conn.fetchval(
                 "SELECT 1 FROM edges WHERE source = $1 AND target = $2 LIMIT 1",
-                src,
-                tgt,
+                src, tgt,
             )
         return row is not None
 
@@ -518,8 +409,7 @@ class GraphManager:
                           WHERE source = $1 AND target = nodes.id AND type = 'contemporaneous'
                       )
                     """,
-                    node_id,
-                    node_year,
+                    node_id, node_year,
                 )
                 await conn.execute(
                     """
@@ -534,8 +424,7 @@ class GraphManager:
                           WHERE source = nodes.id AND target = $1 AND type = 'contemporaneous'
                       )
                     """,
-                    node_id,
-                    node_year,
+                    node_id, node_year,
                 )
 
             # Same location: matching country + region + city
@@ -552,10 +441,7 @@ class GraphManager:
                           WHERE source = $1 AND target = nodes.id AND type = 'same_location'
                       )
                     """,
-                    node_id,
-                    node_country,
-                    node_region,
-                    node_city,
+                    node_id, node_country, node_region, node_city,
                 )
                 await conn.execute(
                     """
@@ -569,10 +455,7 @@ class GraphManager:
                           WHERE source = nodes.id AND target = $1 AND type = 'same_location'
                       )
                     """,
-                    node_id,
-                    node_country,
-                    node_region,
-                    node_city,
+                    node_id, node_country, node_region, node_city,
                 )
 
             # Thematic: overlapping tags
@@ -593,8 +476,7 @@ class GraphManager:
                           WHERE source = $1 AND target = n.id AND type = 'thematic'
                       )
                     """,
-                    node_id,
-                    node_tags,
+                    node_id, node_tags,
                 )
                 await conn.execute(
                     """
@@ -612,8 +494,7 @@ class GraphManager:
                           WHERE source = n.id AND target = $1 AND type = 'thematic'
                       )
                     """,
-                    node_id,
-                    node_tags,
+                    node_id, node_tags,
                 )
 
 

@@ -20,9 +20,10 @@ class FlashClient:
         query: str,
         preset: str = "balanced",
         request_context: dict | None = None,
+        generate_image: bool = True,
     ) -> dict:
-        logger.info("Flash generate: query=%r preset=%s", query, preset)
-        body: dict = {"query": query, "preset": preset}
+        logger.info("Flash generate: query=%r preset=%s generate_image=%s", query, preset, generate_image)
+        body: dict = {"query": query, "preset": preset, "generate_image": generate_image}
         if request_context:
             body["request_context"] = request_context
         resp = await self._client.post(
