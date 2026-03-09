@@ -177,6 +177,11 @@ class JobManager:
 
             month_name = NUM_TO_MONTH.get(month_num, "")
 
+            # Construct serveable image URL from Flash timepoint ID
+            image_url = ""
+            if flash_id:
+                image_url = f"https://api.timepointai.com/api/v1/timepoints/{flash_id}/image"
+
             await self.graph_manager.add_node(
                 path,
                 type="event",
@@ -199,6 +204,7 @@ class JobManager:
                 flash_timepoint_id=flash_id,
                 flash_slug=result.get("slug", ""),
                 flash_share_url=result.get("share_url", ""),
+                image_url=image_url,
                 era=result.get("era", ""),
                 created_at=datetime.now(timezone.utc).isoformat(),
             )

@@ -11,6 +11,7 @@ class MomentSummary(BaseModel):
     layer: int = 0
     visibility: str = "private"
     source_type: str = "historical"
+    image_url: str = ""
 
 
 class EdgeResponse(BaseModel):
@@ -40,6 +41,7 @@ class MomentResponse(BaseModel):
     source_type: str = "historical"
     confidence: float | None = None
     source_run_id: str | None = None
+    image_url: str = ""
     tdf_hash: str = ""
     created_at: str = ""
     published_at: str = ""
@@ -62,6 +64,7 @@ class SearchResult(BaseModel):
     name: str
     one_liner: str = ""
     score: float = 0.0
+    image_url: str = ""
 
 
 class GraphStatsResponse(BaseModel):
@@ -84,6 +87,7 @@ class MomentListItem(BaseModel):
     city: str = ""
     source_type: str = "historical"
     confidence: float | None = None
+    image_url: str = ""
 
 
 class PaginatedMomentsResponse(BaseModel):

@@ -32,6 +32,7 @@ NODE_COLUMNS = [
     "flash_timepoint_id",
     "flash_slug",
     "flash_share_url",
+    "image_url",
     "era",
     "created_at",
     "published_at",
@@ -111,14 +112,14 @@ class GraphManager:
                     id, type, name, year, month, month_num, day, time,
                     country, region, city, slug, layer, visibility,
                     created_by, tags, one_liner, figures,
-                    flash_timepoint_id, flash_slug, flash_share_url, era,
+                    flash_timepoint_id, flash_slug, flash_share_url, image_url, era,
                     created_at, source_type, confidence, source_run_id, tdf_hash
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
                     $15, $16, $17, $18,
-                    $19, $20, $21, $22, $23,
-                    $24, $25, $26, $27
+                    $19, $20, $21, $22, $23, $24,
+                    $25, $26, $27, $28
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -141,6 +142,7 @@ class GraphManager:
                     flash_timepoint_id = EXCLUDED.flash_timepoint_id,
                     flash_slug = EXCLUDED.flash_slug,
                     flash_share_url = EXCLUDED.flash_share_url,
+                    image_url = EXCLUDED.image_url,
                     era = EXCLUDED.era,
                     source_type = EXCLUDED.source_type,
                     confidence = EXCLUDED.confidence,
@@ -168,6 +170,7 @@ class GraphManager:
                 attrs.get("flash_timepoint_id"),
                 attrs.get("flash_slug", ""),
                 attrs.get("flash_share_url", ""),
+                attrs.get("image_url", ""),
                 attrs.get("era", ""),
                 _parse_dt(attrs.get("created_at")),
                 attrs.get("source_type", "historical"),

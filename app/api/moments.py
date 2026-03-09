@@ -71,6 +71,7 @@ async def search_moments(
             name=r.get("name", ""),
             one_liner=r.get("one_liner", ""),
             score=r.get("score", 0.0),
+            image_url=r.get("image_url", ""),
         )
         for r in results
     ]
@@ -89,4 +90,5 @@ def _summary(node: dict) -> dict:
         "layer": node.get("layer", 0),
         "visibility": node.get("visibility", "private"),
         "source_type": node.get("source_type", "historical"),
+        "image_url": node.get("image_url", ""),
     }

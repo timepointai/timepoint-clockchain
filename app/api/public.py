@@ -69,6 +69,7 @@ async def list_moments(
                 city=i.get("city", ""),
                 source_type=i.get("source_type", "historical"),
                 confidence=i.get("confidence"),
+                image_url=i.get("image_url", ""),
             )
             for i in items
         ],

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     flash_timepoint_id TEXT,
     flash_slug TEXT DEFAULT '',
     flash_share_url TEXT DEFAULT '',
+    image_url TEXT DEFAULT '',
     era TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now(),
     published_at TIMESTAMPTZ,
@@ -99,6 +100,26 @@ async def init_schema(pool: asyncpg.Pool):
             await conn.execute(TRGM_DDL)
         except asyncpg.UndefinedObjectError:
             logger.warning("pg_trgm extension not available, skipping trigram indexes")
+
+        # Migration: add image_url column if missing (for existing databases)
+        try:
+            await conn.execute(
+                "ALTER TABLE nodes ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''"
+            )
+        except Exception:
+            pass  # Column already exists from SCHEMA_DDL
+
+        # Backfill: set image_url for nodes that have a flash_timepoint_id but no image_url
+        backfilled = await conn.execute("""
+            UPDATE nodes
+            SET image_url = 'https://api.timepointai.com/api/v1/timepoints/' || flash_timepoint_id || '/image'
+            WHERE flash_timepoint_id IS NOT NULL
+              AND flash_timepoint_id != ''
+              AND (image_url IS NULL OR image_url = '')
+        """)
+        if backfilled and backfilled != "UPDATE 0":
+            logger.info("Backfilled image_url: %s", backfilled)
+
     logger.info("Database schema initialized")
 
 
