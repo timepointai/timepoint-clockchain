@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "google/gemini-2.0-flash-001"
     EXPANSION_ENABLED: bool = False
     DAILY_CRON_ENABLED: bool = False
+    IMAGE_BACKFILL_ENABLED: bool = False
+    IMAGE_BACKFILL_INTERVAL: int = 600
     DATABASE_URL: str = ""
     ADMIN_KEY: str = ""
     RATE_LIMIT_PUBLIC: str = "60/minute"

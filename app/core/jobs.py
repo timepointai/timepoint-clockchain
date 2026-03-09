@@ -144,12 +144,10 @@ class JobManager:
             country, region, city = _parse_location(location_str)
 
             from app.core.url import build_path, slugify, NUM_TO_MONTH
-
             if isinstance(month, int):
                 month_num = month
             else:
                 from app.core.url import MONTH_TO_NUM
-
                 month_num = MONTH_TO_NUM.get(str(month).lower(), 1)
 
             if not slug:
@@ -157,9 +155,7 @@ class JobManager:
             # Clean the slug — Flash appends random hex, keep it
             clean_slug = slugify(slug)
 
-            path = build_path(
-                year, month_num, day, time_str, country, region, city, clean_slug
-            )
+            path = build_path(year, month_num, day, time_str, country, region, city, clean_slug)
 
             # Extract figures from characters
             characters = result.get("characters", {}) or {}
@@ -176,6 +172,8 @@ class JobManager:
             tags = result.get("tags") or []
 
             month_name = NUM_TO_MONTH.get(month_num, "")
+
+            image_url = result.get("image_url")
 
             await self.graph_manager.add_node(
                 path,
@@ -200,6 +198,7 @@ class JobManager:
                 flash_slug=result.get("slug", ""),
                 flash_share_url=result.get("share_url", ""),
                 era=result.get("era", ""),
+                image_url=image_url,
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -220,3 +219,4 @@ class JobManager:
             job.error = error_msg or repr(e)
             job.completed_at = datetime.now(timezone.utc).isoformat()
             logger.error("Job %s failed: %s", job.id, job.error, exc_info=True)
+
