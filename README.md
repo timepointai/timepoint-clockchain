@@ -14,12 +14,12 @@
 **Temporal causal graph for AI agents.** PostgreSQL-backed directed graph of historical moments — canonical spatiotemporal URLs, typed causal edges, autonomous expansion, and browse/search/discovery APIs.
 
 > [!NOTE]
-> **Why this exists** — AI agents that reason about causality across time currently rely on web search (noisy, unstructured), knowledge graphs (no temporal dimension), or hallucination. The Clockchain is a structured alternative: every node carries dialog, entity states, provenance, and confidence, addressed by a canonical spatiotemporal URL, in a format ([TDF](https://github.com/timepoint-ai/timepoint-tdf)) designed for machine consumption.
+> **Why this exists** — AI agents that reason about causality across time currently rely on web search (noisy, unstructured), knowledge graphs (no temporal dimension), or hallucination. The Clockchain is a structured alternative: every node carries dialog, entity states, provenance, and confidence, addressed by a canonical spatiotemporal URL, in a format ([TDF](https://github.com/timepointai/timepoint-tdf)) designed for machine consumption.
 
 The graph accumulates two layers of rendered reality:
 
-- **Rendered Past** — historical events rendered by [Flash](https://github.com/timepoint-ai/timepoint-flash) with full causal structure, entity states, dialog, and source grounding
-- **Rendered Future** — simulation outputs from [Pro](https://github.com/timepoint-ai/timepoint-pro), scored for convergence, stored as TDF records
+- **Rendered Past** — historical events rendered by [Flash](https://github.com/timepointai/timepoint-flash) with full causal structure, entity states, dialog, and source grounding
+- **Rendered Future** — simulation outputs from [Pro](https://github.com/timepointai/timepoint-pro), scored for convergence, stored as TDF records
 
 Each new event with causal edges tightens the Bayesian prior — fewer plausible things *could* have happened in the gaps — approaching asymptotic coverage of any historical period.
 
@@ -36,7 +36,7 @@ flowchart TD
 
 ## Suite Context
 
-Part of the [Timepoint AI](https://github.com/timepoint-ai) suite — the Clockchain is the temporal causal graph that all other services read from and write to.
+Part of the [Timepoint AI](https://github.com/timepointai) suite — the Clockchain is the temporal causal graph that all other services read from and write to.
 
 ## Graph Architecture
 
@@ -285,7 +285,7 @@ DATABASE_URL=postgresql://localhost:5432/clockchain_test pytest tests/ -v
 
 ## Deployment
 
-Deployed on Railway via the [timepoint-clockchain-deploy-private](https://github.com/timepoint-ai/timepoint-clockchain-deploy-private) repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
+Deployed on Railway via the [timepoint-clockchain-deploy-private](https://github.com/timepointai/timepoint-clockchain-deploy-private) repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
 
 ## Seed Data
 
@@ -305,12 +305,12 @@ Open-source engines for temporal AI. Render the past. Simulate the future. Score
 
 | Repo | Role |
 |------|------|
-| [**Flash**](https://github.com/timepoint-ai/timepoint-flash) | Reality Writer — renders grounded historical moments (Synthetic Time Travel) |
-| [**Pro**](https://github.com/timepoint-ai/timepoint-pro) | Simulation Engine — SNAG-powered temporal simulation, TDF output |
+| [**Flash**](https://github.com/timepointai/timepoint-flash) | Reality Writer — renders grounded historical moments (Synthetic Time Travel) |
+| [**Pro**](https://github.com/timepointai/timepoint-pro) | Simulation Engine — SNAG-powered temporal simulation, TDF output |
 | **Clockchain** *(this repo)* | **Temporal Causal Graph — Rendered Past + Rendered Future, growing 24/7** |
-| [**SNAG Bench**](https://github.com/timepoint-ai/timepoint-snag-bench) | Quality Certifier — measures Causal Resolution across renderings |
-| [**Proteus**](https://github.com/timepoint-ai/proteus-markets) | Settlement Layer — prediction markets that validate Rendered Futures |
-| [**TDF**](https://github.com/timepoint-ai/timepoint-tdf) | Data Format — JSON-LD interchange across all services |
+| [**SNAG Bench**](https://github.com/timepointai/timepoint-snag-bench) | Quality Certifier — measures Causal Resolution across renderings |
+| [**Proteus**](https://github.com/timepointai/proteus-markets) | Settlement Layer — prediction markets that validate Rendered Futures |
+| [**TDF**](https://github.com/timepointai/timepoint-tdf) | Data Format — JSON-LD interchange across all services |
 
 #### Private — Applications
 

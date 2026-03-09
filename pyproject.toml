@@ -15,7 +15,7 @@ dependencies = [
     "httpx>=0.28.0",
     "asyncpg>=0.29.0",
     "slowapi>=0.1.9",
-    "timepoint-tdf @ git+https://github.com/timepoint-ai/timepoint-tdf.git",
+    "timepoint-tdf @ git+https://github.com/timepointai/timepoint-tdf.git",
 ]
 
 [project.optional-dependencies]
