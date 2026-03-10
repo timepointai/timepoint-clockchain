@@ -341,6 +341,68 @@ class GraphManager:
             "nodes_with_images": nodes_with_images,
         }
 
+    async def enhanced_stats(self) -> dict:
+        base = await self.stats()
+        async with self.pool.acquire() as conn:
+            min_year = await conn.fetchval("SELECT min(year) FROM nodes")
+            max_year = await conn.fetchval("SELECT max(year) FROM nodes")
+            avg_conf = await conn.fetchval(
+                "SELECT avg(confidence) FROM nodes WHERE confidence IS NOT NULL"
+            )
+            last_updated = await conn.fetchval(
+                "SELECT max(created_at) FROM nodes"
+            )
+        base["date_range"] = {"min_year": min_year, "max_year": max_year}
+        base["avg_confidence"] = float(avg_conf) if avg_conf is not None else None
+        base["last_updated"] = str(last_updated) if last_updated else None
+        return base
+
+    async def list_moments(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        entity: str | None = None,
+        query: str | None = None,
+        min_confidence: float | None = None,
+        sort: str = "year",
+    ) -> tuple[list[dict], int]:
+        conditions = ["visibility = 'public'"]
+        params: list = []
+        idx = 1
+        if year_from is not None:
+            conditions.append(f"year >= ${idx}")
+            params.append(year_from)
+            idx += 1
+        if year_to is not None:
+            conditions.append(f"year <= ${idx}")
+            params.append(year_to)
+            idx += 1
+        if entity:
+            conditions.append(f"(name ILIKE ${idx} OR ${idx} = ANY(figures))")
+            params.append(f"%{entity}%")
+            idx += 1
+        if query:
+            conditions.append(f"(name ILIKE ${idx} OR one_liner ILIKE ${idx})")
+            params.append(f"%{query}%")
+            idx += 1
+        if min_confidence is not None:
+            conditions.append(f"confidence >= ${idx}")
+            params.append(min_confidence)
+            idx += 1
+        where = " AND ".join(conditions)
+        order = "year ASC" if sort == "year" else "created_at DESC"
+        async with self.pool.acquire() as conn:
+            total = await conn.fetchval(
+                f"SELECT count(*) FROM nodes WHERE {where}", *params
+            )
+            rows = await conn.fetch(
+                f"SELECT id AS path, * FROM nodes WHERE {where} ORDER BY {order} LIMIT ${idx} OFFSET ${idx + 1}",
+                *params, limit, offset,
+            )
+        return [dict(r) for r in rows], total
+
     async def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
