@@ -5,7 +5,7 @@ from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.rate_limit import limiter
 
-router = APIRouter(dependencies=[Depends(verify_service_key)])
+router = APIRouter(tags=["Graph"], dependencies=[Depends(verify_service_key)])
 
 
 @router.get("/graph/neighbors/{path:path}")

@@ -91,18 +91,39 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title="TIMEPOINT Clockchain",
-    version="0.1.0",
+    description=(
+        "Temporal causal graph for AI agents. PostgreSQL-backed directed graph of "
+        "historical moments with canonical spatiotemporal URLs, typed causal edges, "
+        "autonomous expansion, and browse/search/discovery APIs.\n\n"
+        "**Public endpoints** (`/api/v1/moments`, `/api/v1/stats`) require no auth. "
+        "All other endpoints require an `X-Service-Key` header.\n\n"
+        "Part of the [Timepoint AI](https://github.com/timepointai) suite."
+    ),
+    version="0.2.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    openapi_tags=[
+        {"name": "Public", "description": "Unauthenticated read-only endpoints (rate limited)"},
+        {"name": "Browse", "description": "Hierarchical path browsing and discovery"},
+        {"name": "Graph", "description": "Graph structure queries (neighbors, stats)"},
+        {"name": "Generate", "description": "Scene generation, job tracking, publishing"},
+        {"name": "Ingest", "description": "Bulk data ingestion (subgraph, TDF)"},
+        {"name": "System", "description": "Health checks and service info"},
+    ],
+    contact={"name": "Sean McDonald", "url": "https://x.com/seanmcdonaldxyz"},
+    license_info={"name": "Apache 2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
 )
 app.include_router(api_router)
 
 
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root():
-    return {"service": "timepoint-clockchain", "version": "0.1.0"}
+    return {"service": "timepoint-clockchain", "version": "0.2.0"}
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 async def health():
     gm = getattr(app.state, "graph_manager", None)
     nodes = await gm.node_count() if gm else 0
