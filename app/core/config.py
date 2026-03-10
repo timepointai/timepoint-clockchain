@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     IMAGE_BACKFILL_INTERVAL: int = 600
     DATABASE_URL: str = ""
     ADMIN_KEY: str = ""
+    RATE_LIMIT_PUBLIC: str = "60/minute"
+    RATE_LIMIT_AUTH_READ: str = "300/minute"
+    RATE_LIMIT_AUTH_WRITE: str = "30/minute"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
