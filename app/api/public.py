@@ -13,7 +13,7 @@ from app.models.schemas import (
     PaginatedMomentsResponse,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Public"])
 
 
 def _month_to_int(val) -> int:

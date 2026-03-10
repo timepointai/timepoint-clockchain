@@ -8,7 +8,7 @@ from app.core.tdf_bridge import tdf_to_node_attrs
 from app.models.schemas import SubgraphIngestRequest, SubgraphIngestResponse
 from timepoint_tdf import TDFRecord
 
-router = APIRouter(dependencies=[Depends(verify_service_key)])
+router = APIRouter(tags=["Ingest"], dependencies=[Depends(verify_service_key)])
 
 
 @router.post("/ingest/subgraph", response_model=SubgraphIngestResponse)

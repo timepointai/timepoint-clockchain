@@ -15,7 +15,7 @@ from app.models.schemas import (
     TodayResponse,
 )
 
-router = APIRouter(dependencies=[Depends(verify_service_key)])
+router = APIRouter(tags=["Browse"], dependencies=[Depends(verify_service_key)])
 
 
 @router.get("/moments/{path:path}")

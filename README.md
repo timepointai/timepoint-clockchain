@@ -1,6 +1,15 @@
 # timepoint-clockchain
 
-## Changes 2026-03-02 — TDF integration complete, branch protection locked
+## Changes 2026-03-10 — Image generation, public API fixes, OpenAPI docs
+
+- **Image generation for all nodes** — new `image_url` column on nodes; `ImageBackfillWorker` retroactively generates images for existing nodes via Flash; all new nodes are generated with `generate_image=true` by default
+- **Public API fixes** — `enhanced_stats()` and `list_moments()` methods added to GraphManager; `/api/v1/stats` and `/api/v1/moments` (public, paginated) now return 200 instead of 500
+- **Rate limiting config** — `RATE_LIMIT_PUBLIC`, `RATE_LIMIT_AUTH_READ`, `RATE_LIMIT_AUTH_WRITE` settings added (were referenced by decorators but missing from config)
+- **OpenAPI / Swagger** — full interactive API docs at `/docs` (Swagger UI) and `/redoc` (ReDoc); tagged endpoint groups (Public, Browse, Graph, Generate, Ingest, System)
+- **Org rename** — all GitHub URLs updated from `timepoint-ai` to `timepointai`
+- 769 nodes, 5602 edges, 561 with images as of this release
+
+### Changes 2026-03-02 — TDF integration complete, branch protection locked
 
 - Added `timepoint-tdf` library dependency for cross-service data interchange
 - New `?format=tdf` query parameter on moments endpoint for TDF export
@@ -87,7 +96,7 @@ Two tables with indexes:
 nodes (id TEXT PK, type, name, year, month, month_num, day, time,
        country, region, city, slug, layer, visibility, created_by,
        tags TEXT[], one_liner, figures TEXT[], flash_timepoint_id,
-       flash_slug, flash_share_url, era, created_at, published_at)
+       flash_slug, flash_share_url, era, image_url, created_at, published_at)
 
 edges (source TEXT FK, target TEXT FK, type TEXT CHECK(...),
        weight FLOAT, theme TEXT, PK(source, target, type))
@@ -116,14 +125,15 @@ Clockchain nodes are expressible as TDF records via `timepoint-tdf`. Coverage an
 
 ## Autonomous Workers
 
-Four background workers handle content generation and graph growth:
+Five background workers handle content generation and graph growth:
 
 | Worker | File | Purpose | Feature Flag |
 |--------|------|---------|-------------|
-| **Renderer** | `app/workers/renderer.py` | HTTP client for Flash scene generation (`generate_sync`, `get_timepoint`) | Always available |
+| **Renderer** | `app/workers/renderer.py` | HTTP client for Flash scene generation (`generate_sync`, `get_timepoint`); defaults to `generate_image=true` | Always available |
 | **Expander** | `app/workers/expander.py` | LLM-driven autonomous graph growth; picks low-degree frontier nodes and generates related events via OpenRouter | `EXPANSION_ENABLED=true` + `OPENROUTER_API_KEY` |
 | **Judge** | `app/workers/judge.py` | LLM content moderation gate; classifies queries as approve/sensitive/reject via OpenRouter | Used during generation flow |
 | **Daily** | `app/workers/daily.py` | "Today in History" cron; finds date-matching events without Flash scenes and queues generation | `DAILY_CRON_ENABLED=true` |
+| **Image Backfill** | `app/workers/image_backfill.py` | Retroactively generates images for nodes missing `image_url`; batches of 50, layer 2+ priority, max 3 retries per node | `IMAGE_BACKFILL_ENABLED=true` |
 
 ### How the Graph Grows
 
@@ -143,28 +153,34 @@ The Expander runs on a configurable interval (default 300s). The Daily worker ad
 
 ## API Endpoints
 
-All endpoints require `X-Service-Key` header except `/health` and `/`. These are exposed to the platform through Flash's proxy at `/api/v1/clockchain/*`.
+Interactive API docs are available at `/docs` (Swagger UI) and `/redoc` (ReDoc). The OpenAPI spec is served at `/openapi.json`.
 
-### Browse and Discovery
+### Public (no auth required, rate limited)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Health check (no auth) |
+| `GET` | `/health` | Health check |
+| `GET` | `/api/v1/moments` | Paginated moment list with filters (year range, entity, text search, confidence) |
+| `GET` | `/api/v1/moments/{path}` | Full moment data by canonical URL (public moments; auth unlocks private) |
+| `GET` | `/api/v1/stats` | Enhanced graph statistics (node/edge counts, date range, image coverage) |
+
+### Browse and Discovery (auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | `GET` | `/api/v1/browse` | List root segments (years) |
 | `GET` | `/api/v1/browse/{path}` | Hierarchical path listing (public moments only) |
-| `GET` | `/api/v1/moments/{path}` | Full moment data by canonical URL |
 | `GET` | `/api/v1/today` | Events matching today's month/day |
 | `GET` | `/api/v1/random` | Random public moment (Layer 1+) |
 | `GET` | `/api/v1/search?q={query}` | Full-text search (ILIKE + array unnest for tags/figures) |
 
-### Graph
+### Graph (auth required)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/graph/neighbors/{path}` | Connected nodes with edge metadata |
-| `GET` | `/api/v1/stats` | Graph statistics (node/edge counts by layer and type) |
 
-### Generation and Indexing
+### Generation and Indexing (auth required)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -175,6 +191,7 @@ All endpoints require `X-Service-Key` header except `/health` and `/`. These are
 | `POST` | `/api/v1/index` | Add or update a moment in the graph |
 | `POST` | `/api/v1/expand-once` | Trigger one expansion cycle (requires `OPENROUTER_API_KEY`) |
 | `POST` | `/api/v1/ingest/subgraph` | Bulk-ingest a causal subgraph (nodes + edges) |
+| `POST` | `/api/v1/ingest/tdf` | Ingest a TDF record from sibling services |
 
 ## Architecture
 
@@ -195,10 +212,11 @@ timepoint-clockchain/
 │   │   ├── url.py           # Canonical temporal URL system
 │   │   └── jobs.py          # In-memory job queue
 │   ├── workers/
-│   │   ├── renderer.py      # Flash HTTP client
+│   │   ├── renderer.py      # Flash HTTP client (generate_image=true by default)
 │   │   ├── expander.py      # Autonomous graph expansion (OpenRouter)
 │   │   ├── judge.py         # LLM content moderation (OpenRouter)
-│   │   └── daily.py         # "Today in History" daily worker
+│   │   ├── daily.py         # "Today in History" daily worker
+│   │   └── image_backfill.py # Retroactive image generation for imageless nodes
 │   └── models/
 │       └── schemas.py       # Pydantic response/request models
 ├── data/
@@ -270,7 +288,12 @@ On startup, the service:
 | `OPENROUTER_MODEL` | No | `google/gemini-2.0-flash-001` | Model for AI workers |
 | `EXPANSION_ENABLED` | No | `false` | Enable autonomous graph expansion |
 | `DAILY_CRON_ENABLED` | No | `false` | Enable "Today in History" worker |
+| `IMAGE_BACKFILL_ENABLED` | No | `false` | Enable image backfill worker |
+| `IMAGE_BACKFILL_INTERVAL` | No | `600` | Backfill cycle interval in seconds |
 | `ADMIN_KEY` | No | | Key for bulk generation endpoint |
+| `RATE_LIMIT_PUBLIC` | No | `60/minute` | Rate limit for unauthenticated endpoints |
+| `RATE_LIMIT_AUTH_READ` | No | `300/minute` | Rate limit for authenticated reads |
+| `RATE_LIMIT_AUTH_WRITE` | No | `30/minute` | Rate limit for authenticated writes |
 
 ## Testing
 

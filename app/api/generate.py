@@ -12,7 +12,7 @@ from app.models.schemas import (
     PublishRequest,
 )
 
-router = APIRouter(dependencies=[Depends(verify_service_key)])
+router = APIRouter(tags=["Generate"], dependencies=[Depends(verify_service_key)])
 
 
 async def get_job_manager(request: Request) -> JobManager:
