@@ -2,7 +2,8 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 
 from app.api import api_router
 from app.core.config import get_settings
@@ -118,8 +119,11 @@ app = FastAPI(
 app.include_router(api_router)
 
 
-@app.get("/", tags=["System"])
-async def root():
+@app.get("/", tags=["System"], include_in_schema=False)
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse("https://timepointai.com", status_code=302)
     return {"service": "timepoint-clockchain", "version": "0.2.0"}
 
 
