@@ -20,6 +20,8 @@ class EdgeResponse(BaseModel):
     edge_type: str
     weight: float = 1.0
     theme: str = ""
+    description: str = ""
+    created_by: str = "auto"
 
 
 class MomentResponse(BaseModel):
@@ -162,6 +164,8 @@ class SubgraphEdgeInput(BaseModel):
     type: str = "thematic"
     weight: float = 1.0
     theme: str = ""
+    description: str = ""
+    created_by: str = "auto"
 
 
 class SubgraphIngestRequest(BaseModel):

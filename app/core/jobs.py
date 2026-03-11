@@ -45,10 +45,11 @@ def _parse_location(location_str: str) -> tuple[str, str, str]:
 
 
 def _extract_name_from_query(query: str) -> str:
-    """Clean up a query string into an event name."""
-    # Remove trailing date/location hints like "March 15 44 BC Rome"
+    """Extract the event name from a composite query like 'Name, year, country, city'."""
     name = query.strip()
-    # Capitalize properly
+    # The expander sends "name, year, country, city" — extract text before first comma
+    if "," in name:
+        name = name.split(",", 1)[0].strip()
     return name
 
 
@@ -71,6 +72,7 @@ class Job:
     flash_response: dict | None = None
     user_id: str | None = None
     visibility: str = "private"
+    override_name: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -96,6 +98,7 @@ class JobManager:
         preset: str = "balanced",
         user_id: str | None = None,
         visibility: str = "private",
+        override_name: str | None = None,
     ) -> Job:
         job = Job(
             id=str(uuid.uuid4()),
@@ -103,6 +106,7 @@ class JobManager:
             preset=preset,
             user_id=user_id,
             visibility=visibility,
+            override_name=override_name,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         self.jobs[job.id] = job
@@ -125,7 +129,7 @@ class JobManager:
             )
 
             flash_id = result.get("id") or result.get("timepoint_id")
-            name = result.get("name") or _extract_name_from_query(job.query)
+            name = job.override_name or result.get("name") or _extract_name_from_query(job.query)
             slug = result.get("slug", "")
 
             # Flash returns year as positive int, month/day as ints

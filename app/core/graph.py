@@ -8,7 +8,11 @@ from app.core.tdf import compute_tdf_hash
 
 logger = logging.getLogger("clockchain.graph")
 
-VALID_EDGE_TYPES = {"causes", "contemporaneous", "same_location", "thematic"}
+VALID_EDGE_TYPES = {
+    "causes", "caused_by", "influences", "contemporaneous", "same_era",
+    "same_location", "same_conflict", "same_figure", "thematic",
+    "precedes", "follows",
+}
 
 NODE_COLUMNS = [
     "id", "type", "name", "year", "month", "month_num", "day", "time",
@@ -163,13 +167,15 @@ class GraphManager:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO edges (source, target, type, weight, theme)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO edges (source, target, type, weight, theme, description, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (source, target, type) DO NOTHING
                 """,
                 src, tgt, edge_type,
                 attrs.get("weight", 1.0),
                 attrs.get("theme", ""),
+                attrs.get("description", ""),
+                attrs.get("created_by", "auto"),
             )
 
     async def get_node(self, node_id: str) -> dict | None:
@@ -295,11 +301,13 @@ class GraphManager:
 
             rows = await conn.fetch(
                 """
-                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme, 'out' AS direction
+                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme,
+                       e.description, e.created_by, 'out' AS direction
                 FROM edges e JOIN nodes n ON n.id = e.target
                 WHERE e.source = $1
                 UNION ALL
-                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme, 'in' AS direction
+                SELECT n.id, n.name, e.type AS edge_type, e.weight, e.theme,
+                       e.description, e.created_by, 'in' AS direction
                 FROM edges e JOIN nodes n ON n.id = e.source
                 WHERE e.target = $1
                 """,
@@ -312,6 +320,8 @@ class GraphManager:
                 "edge_type": row["edge_type"],
                 "weight": row["weight"],
                 "theme": row["theme"],
+                "description": row["description"] or "",
+                "created_by": row["created_by"] or "auto",
             }
             for row in rows
         ]
@@ -454,50 +464,107 @@ class GraphManager:
                 return
 
             node_year = node["year"]
+            node_month = node["month_num"] or 0
+            node_day = node["day"] or 0
             node_country = node["country"] or ""
             node_region = node["region"] or ""
             node_city = node["city"] or ""
             node_tags = list(node["tags"]) if node["tags"] else []
+            node_figures = list(node["figures"]) if node["figures"] else []
 
-            # Contemporaneous: same year +/- 1
-            if node_year is not None:
+            # Contemporaneous: EXACT same date (year + month + day, all nonzero)
+            if node_year is not None and node_month > 0 and node_day > 0:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight)
-                    SELECT $1, id, 'contemporaneous', 0.5
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT $1, id, 'contemporaneous', 0.8, 'auto'
                     FROM nodes
                     WHERE id != $1
-                      AND year IS NOT NULL
-                      AND abs(year - $2) <= 1
+                      AND year = $2 AND month_num = $3 AND day = $4
                       AND NOT EXISTS (
                           SELECT 1 FROM edges
                           WHERE source = $1 AND target = nodes.id AND type = 'contemporaneous'
                       )
                     """,
-                    node_id, node_year,
+                    node_id, node_year, node_month, node_day,
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight)
-                    SELECT id, $1, 'contemporaneous', 0.5
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT id, $1, 'contemporaneous', 0.8, 'auto'
                     FROM nodes
                     WHERE id != $1
-                      AND year IS NOT NULL
-                      AND abs(year - $2) <= 1
+                      AND year = $2 AND month_num = $3 AND day = $4
                       AND NOT EXISTS (
                           SELECT 1 FROM edges
                           WHERE source = nodes.id AND target = $1 AND type = 'contemporaneous'
                       )
                     """,
-                    node_id, node_year,
+                    node_id, node_year, node_month, node_day,
+                )
+
+            # Same era: same decade
+            if node_year is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT $1, id, 'same_era', 0.3, 'auto'
+                    FROM nodes
+                    WHERE id != $1
+                      AND year IS NOT NULL
+                      AND abs(year - $2) <= 10
+                      AND NOT (year = $2 AND month_num = $3 AND day = $4
+                               AND $3 > 0 AND $4 > 0)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = nodes.id AND type = 'same_era'
+                      )
+                    """,
+                    node_id, node_year, node_month, node_day,
+                )
+
+                # Precedes/follows: directional temporal edges for same-era nodes
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT $1, id, 'precedes', 0.4, 'auto'
+                    FROM nodes
+                    WHERE id != $1
+                      AND year IS NOT NULL
+                      AND abs(year - $2) <= 10
+                      AND (year > $2 OR (year = $2 AND month_num > $3)
+                           OR (year = $2 AND month_num = $3 AND day > $4))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = nodes.id AND type = 'precedes'
+                      )
+                    """,
+                    node_id, node_year, node_month, node_day,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT $1, id, 'follows', 0.4, 'auto'
+                    FROM nodes
+                    WHERE id != $1
+                      AND year IS NOT NULL
+                      AND abs(year - $2) <= 10
+                      AND (year < $2 OR (year = $2 AND month_num < $3)
+                           OR (year = $2 AND month_num = $3 AND day < $4))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = nodes.id AND type = 'follows'
+                      )
+                    """,
+                    node_id, node_year, node_month, node_day,
                 )
 
             # Same location: matching country + region + city
             if node_country:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight)
-                    SELECT $1, id, 'same_location', 0.5
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT $1, id, 'same_location', 0.5, 'auto'
                     FROM nodes
                     WHERE id != $1
                       AND country = $2 AND region = $3 AND city = $4
@@ -510,8 +577,8 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight)
-                    SELECT id, $1, 'same_location', 0.5
+                    INSERT INTO edges (source, target, type, weight, created_by)
+                    SELECT id, $1, 'same_location', 0.5, 'auto'
                     FROM nodes
                     WHERE id != $1
                       AND country = $2 AND region = $3 AND city = $4
@@ -523,16 +590,58 @@ class GraphManager:
                     node_id, node_country, node_region, node_city,
                 )
 
+            # Same figure: overlapping figures arrays
+            if node_figures:
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    SELECT $1, n.id, 'same_figure', 0.6,
+                           array_to_string(ARRAY(
+                               SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.figures)
+                               ORDER BY 1
+                           ), ', '),
+                           'auto'
+                    FROM nodes n
+                    WHERE n.id != $1
+                      AND n.figures && $2::text[]
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = $1 AND target = n.id AND type = 'same_figure'
+                      )
+                    """,
+                    node_id, node_figures,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    SELECT n.id, $1, 'same_figure', 0.6,
+                           array_to_string(ARRAY(
+                               SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.figures)
+                               ORDER BY 1
+                           ), ', '),
+                           'auto'
+                    FROM nodes n
+                    WHERE n.id != $1
+                      AND n.figures && $2::text[]
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges
+                          WHERE source = n.id AND target = $1 AND type = 'same_figure'
+                      )
+                    """,
+                    node_id, node_figures,
+                )
+
             # Thematic: overlapping tags
             if node_tags:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by)
                     SELECT $1, n.id, 'thematic', 0.3,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
                                ORDER BY 1
-                           ), ', ')
+                           ), ', '),
+                           'auto'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.tags && $2::text[]
@@ -545,12 +654,13 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by)
                     SELECT n.id, $1, 'thematic', 0.3,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
                                ORDER BY 1
-                           ), ', ')
+                           ), ', '),
+                           'auto'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.tags && $2::text[]

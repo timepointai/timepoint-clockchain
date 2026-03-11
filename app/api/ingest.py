@@ -53,6 +53,8 @@ async def ingest_subgraph(
                 edge.type,
                 weight=edge.weight,
                 theme=edge.theme,
+                description=edge.description,
+                created_by=edge.created_by,
             )
             edge_count += 1
         except ValueError:
