@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -35,6 +36,35 @@ Return a JSON array of objects, each with:
 Return ONLY the JSON array, no other text."""
 
 
+class BudgetTracker:
+    """Track OpenRouter spend within a rolling 24h window."""
+
+    def __init__(self, daily_limit: float):
+        self.daily_limit = daily_limit
+        self._spend: list[tuple[float, float]] = []  # (timestamp, cost)
+        self._lock = asyncio.Lock()
+
+    async def record(self, cost: float):
+        async with self._lock:
+            self._spend.append((time.monotonic(), cost))
+
+    async def remaining(self) -> float:
+        async with self._lock:
+            cutoff = time.monotonic() - 86400
+            self._spend = [(t, c) for t, c in self._spend if t > cutoff]
+            spent = sum(c for _, c in self._spend)
+            return max(0.0, self.daily_limit - spent)
+
+    async def can_spend(self) -> bool:
+        return (await self.remaining()) > 0
+
+    async def total_spent(self) -> float:
+        async with self._lock:
+            cutoff = time.monotonic() - 86400
+            self._spend = [(t, c) for t, c in self._spend if t > cutoff]
+            return sum(c for _, c in self._spend)
+
+
 class GraphExpander:
     def __init__(
         self,
@@ -42,19 +72,30 @@ class GraphExpander:
         api_key: str,
         model: str = "deepseek/deepseek-chat-v3-0324",
         interval_seconds: int = 300,
+        concurrency: int = 1,
+        target: int = 0,
+        daily_budget: float = 5.0,
         job_manager=None,
     ):
         self.gm = graph_manager
         self.api_key = api_key
         self.model = model
         self.interval = interval_seconds
+        self.concurrency = max(1, concurrency)
+        self.target = target
         self.jm = job_manager
+        self.budget = BudgetTracker(daily_budget)
+        self._paused_until: float = 0
 
     async def start(self):
-        logger.info("Graph expander starting (interval=%ds)", self.interval)
+        logger.info(
+            "Graph expander starting (interval=%ds, concurrency=%d, target=%s, budget=$%.2f/day)",
+            self.interval, self.concurrency,
+            self.target or "unlimited", self.budget.daily_limit,
+        )
         while True:
             try:
-                await self._expand_once()
+                await self._expand_cycle()
             except asyncio.CancelledError:
                 logger.info("Graph expander cancelled")
                 break
@@ -62,19 +103,58 @@ class GraphExpander:
                 logger.error("Expander error: %s", e)
             await asyncio.sleep(self.interval)
 
-    async def _expand_once(self):
-        frontier = await self.gm.get_frontier_nodes(threshold=3)
+    async def _expand_cycle(self):
+        # Check target cap
+        if self.target > 0:
+            count = await self.gm.node_count()
+            if count >= self.target:
+                logger.info(
+                    "Target reached (%d/%d nodes), expander paused",
+                    count, self.target,
+                )
+                return
+
+        # Check budget
+        if not await self.budget.can_spend():
+            spent = await self.budget.total_spent()
+            logger.info(
+                "Daily budget exhausted ($%.4f/$%.2f), expander paused",
+                spent, self.budget.daily_limit,
+            )
+            return
+
+        # Get frontier nodes for concurrent expansion
+        frontier = await self.gm.get_frontier_nodes(
+            threshold=3, limit=self.concurrency
+        )
         if not frontier:
             logger.info("No frontier nodes to expand")
             return
 
-        node_id = frontier[0]
+        if self.concurrency == 1:
+            await self._expand_node(frontier[0])
+        else:
+            tasks = [self._expand_node(nid) for nid in frontier]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _expand_node(self, node_id: str):
+        # Pre-check budget before each node
+        if not await self.budget.can_spend():
+            return
+
         node = await self.gm.get_node(node_id)
         if not node:
             return
 
         logger.info("Expanding from node: %s", node_id)
-        related = await self._generate_related(node)
+        related, cost = await self._generate_related(node)
+        await self.budget.record(cost)
+
+        remaining = await self.budget.remaining()
+        logger.info(
+            "OpenRouter cost: $%.6f (remaining today: $%.4f)",
+            cost, remaining,
+        )
 
         added = 0
         for event in related:
@@ -86,7 +166,7 @@ class GraphExpander:
             "Expansion complete: added %d events from %s", added, node_id
         )
 
-    async def _generate_related(self, node: dict) -> list[dict]:
+    async def _generate_related(self, node: dict) -> tuple[list[dict], float]:
         prompt = EXPANSION_PROMPT.format(
             name=node.get("name", ""),
             year=node.get("year", ""),
@@ -114,6 +194,19 @@ class GraphExpander:
             resp.raise_for_status()
             data = resp.json()
 
+        # Extract cost from OpenRouter response
+        cost = 0.0
+        usage = data.get("usage", {})
+        if usage:
+            # OpenRouter includes cost in the response body
+            cost = float(usage.get("total_cost", 0) or 0)
+        if cost == 0:
+            # Fallback: estimate from token counts (rough, for cheap models)
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            # Assume ~$0.10/M tokens as conservative upper bound for distillable models
+            cost = (prompt_tokens + completion_tokens) * 0.0000001
+
         text = data["choices"][0]["message"]["content"].strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
@@ -121,16 +214,11 @@ class GraphExpander:
                 text = text[:-3]
             text = text.strip()
 
-        return json.loads(text)
+        return json.loads(text), cost
 
     async def _add_event(self, event: dict, source_node_id: str) -> bool:
-        name = event.get("name", "")
-        year = event.get("year", "")
-        edge_type = event.get("edge_type", "thematic")
-
         if self.jm:
             return await self._add_via_flash(event, source_node_id)
-
         return await self._add_direct(event, source_node_id)
 
     async def _add_via_flash(self, event: dict, source_node_id: str) -> bool:
@@ -149,7 +237,6 @@ class GraphExpander:
             await self.jm.process_job(job)
 
             if job.status == "completed" and job.path:
-                # Add edge from source to the new Flash-rendered node
                 edge_type = event.get("edge_type", "thematic")
                 if edge_type in {"causes", "contemporaneous", "same_location", "thematic"}:
                     try:
