@@ -37,8 +37,9 @@ async def generate_moment(
 
         settings = get_settings()
         if settings.OPENROUTER_API_KEY:
+            active_model = getattr(request.app.state, "active_model", "") or settings.OPENROUTER_MODEL
             judge = ContentJudge(
-                settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+                settings.OPENROUTER_API_KEY, model=active_model
             )
             verdict = await judge.screen(body.query)
             if verdict == "reject":
@@ -133,8 +134,9 @@ async def expand_once(
     before_nodes = await gm.node_count()
     before_edges = await gm.edge_count()
 
+    active_model = getattr(request.app.state, "active_model", "") or settings.OPENROUTER_MODEL
     expander = GraphExpander(
-        gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+        gm, settings.OPENROUTER_API_KEY, model=active_model
     )
     await expander._expand_once()
 

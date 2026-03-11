@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.db import create_pool, init_schema, run_migrations, seed_if_empty
 from app.core.graph import GraphManager
 from app.core.jobs import JobManager
+from app.core.model_selector import ModelSelector
 from app.workers.renderer import FlashClient
 
 logger = logging.getLogger("clockchain")
@@ -40,13 +41,23 @@ async def lifespan(application: FastAPI):
     job_manager = JobManager(graph_manager=gm, flash_client=flash_client)
     application.state.job_manager = job_manager
 
+    # Model selection — resolve permissive model
+    model_selector = ModelSelector()
+    if settings.OPENROUTER_API_KEY:
+        active_model = await model_selector.resolve()
+    else:
+        active_model = settings.OPENROUTER_MODEL or "deepseek/deepseek-chat-v3-0324"
+    application.state.model_selector = model_selector
+    application.state.active_model = active_model
+    logger.info("Active LLM model: %s", active_model)
+
     # Expander (gated by feature flag)
     expander_task = None
     if settings.EXPANSION_ENABLED and settings.OPENROUTER_API_KEY:
         try:
             from app.workers.expander import GraphExpander
             expander = GraphExpander(
-                gm, settings.OPENROUTER_API_KEY, model=settings.OPENROUTER_MODEL
+                gm, settings.OPENROUTER_API_KEY, model=active_model
             )
             expander_task = asyncio.create_task(expander.start())
             logger.info("Graph expander started")
