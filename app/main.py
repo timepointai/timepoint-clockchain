@@ -81,19 +81,6 @@ async def lifespan(application: FastAPI):
         except ImportError:
             pass
 
-    # Image backfill worker (gated by feature flag)
-    image_backfill_task = None
-    if settings.IMAGE_BACKFILL_ENABLED:
-        try:
-            from app.workers.image_backfill import ImageBackfillWorker
-            backfill = ImageBackfillWorker(
-                gm, flash_client, interval_seconds=settings.IMAGE_BACKFILL_INTERVAL,
-            )
-            image_backfill_task = asyncio.create_task(backfill.start())
-            logger.info("Image backfill worker started")
-        except ImportError:
-            pass
-
     yield
 
     # Shutdown
@@ -101,8 +88,6 @@ async def lifespan(application: FastAPI):
         expander_task.cancel()
     if daily_task:
         daily_task.cancel()
-    if image_backfill_task:
-        image_backfill_task.cancel()
     await gm.close()
     logger.info("Clockchain shutting down")
 

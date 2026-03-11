@@ -318,6 +318,8 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                         "type": edge.get("type", "thematic"),
                         "weight": edge.get("weight", 1.0),
                         "theme": edge.get("theme", ""),
+                        "description": edge.get("description", ""),
+                        "schema_version": edge.get("schema_version", "0.2"),
                     })
 
                 prov = rec.get("provenance", {})
@@ -330,12 +332,15 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                         country, region, city, slug, layer, visibility,
                         created_by, tags, one_liner, figures,
                         flash_timepoint_id, created_at,
-                        confidence, source_run_id, tdf_hash
+                        confidence, source_run_id, tdf_hash,
+                        schema_version, text_model, image_model,
+                        model_provider, model_permissiveness
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8,
                         $9, $10, $11, $12, $13, $14,
                         $15, $16, $17, $18,
-                        $19, $20, $21, $22, $23
+                        $19, $20, $21, $22, $23,
+                        $24, $25, $26, $27, $28
                     )
                     ON CONFLICT (id) DO NOTHING
                     """,
@@ -362,13 +367,18 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                     prov.get("confidence"),
                     prov.get("run_id"),
                     tdf_hash,
+                    payload.get("schema_version", "0.2"),
+                    payload.get("text_model", ""),
+                    payload.get("image_model", ""),
+                    payload.get("model_provider", ""),
+                    payload.get("model_permissiveness", "unknown"),
                 )
 
             for edge in deferred_edges:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO edges (source, target, type, weight, theme, description, schema_version)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (source, target, type) DO NOTHING
                     """,
                     edge["source"],
@@ -376,4 +386,6 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                     edge["type"],
                     edge["weight"],
                     edge["theme"],
+                    edge.get("description", ""),
+                    edge.get("schema_version", "0.2"),
                 )
