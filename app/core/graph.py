@@ -403,23 +403,26 @@ class GraphManager:
             )
         return [dict(r) for r in rows], total
 
-    async def get_frontier_nodes(self, threshold: int = 3) -> list[str]:
+    async def get_frontier_nodes(self, threshold: int = 3, limit: int = 0) -> list[str]:
+        query = """
+            SELECT n.id, coalesce(ec.cnt, 0) AS deg
+            FROM nodes n
+            LEFT JOIN (
+                SELECT id, count(*) AS cnt FROM (
+                    SELECT source AS id FROM edges
+                    UNION ALL
+                    SELECT target AS id FROM edges
+                ) sub GROUP BY id
+            ) ec ON ec.id = n.id
+            WHERE coalesce(ec.cnt, 0) < $1
+            ORDER BY random()
+        """
+        params: list = [threshold]
+        if limit > 0:
+            query += " LIMIT $2"
+            params.append(limit)
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT n.id, coalesce(ec.cnt, 0) AS deg
-                FROM nodes n
-                LEFT JOIN (
-                    SELECT id, count(*) AS cnt FROM (
-                        SELECT source AS id FROM edges
-                        UNION ALL
-                        SELECT target AS id FROM edges
-                    ) sub GROUP BY id
-                ) ec ON ec.id = n.id
-                WHERE coalesce(ec.cnt, 0) < $1
-                """,
-                threshold,
-            )
+            rows = await conn.fetch(query, *params)
         return [row["id"] for row in rows]
 
     async def degree(self, node_id: str) -> int:

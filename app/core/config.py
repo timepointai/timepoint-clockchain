@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_MODEL: str = ""
     EXPANSION_ENABLED: bool = False
+    EXPANSION_CONCURRENCY: int = 1
+    EXPANSION_INTERVAL: int = 300
+    EXPANSION_TARGET: int = 0
+    EXPANSION_DAILY_BUDGET: float = 5.0
     DAILY_CRON_ENABLED: bool = False
     IMAGE_BACKFILL_ENABLED: bool = False
     IMAGE_BACKFILL_INTERVAL: int = 600
