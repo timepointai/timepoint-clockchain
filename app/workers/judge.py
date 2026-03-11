@@ -21,7 +21,7 @@ Return ONLY a JSON object: {{"verdict": "approve"|"sensitive"|"reject", "reason"
 
 
 class ContentJudge:
-    def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-001"):
+    def __init__(self, api_key: str, model: str = "deepseek/deepseek-chat-v3-0324"):
         self.api_key = api_key
         self.model = model
 
