@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from datetime import datetime
 
@@ -5,6 +6,8 @@ import asyncpg
 from fastapi import Request
 
 from app.core.tdf import compute_tdf_hash
+
+CURRENT_SCHEMA_VERSION = "0.2"
 
 logger = logging.getLogger("clockchain.graph")
 
@@ -21,6 +24,9 @@ NODE_COLUMNS = [
     "flash_timepoint_id", "flash_slug", "flash_share_url", "era", "image_url",
     "created_at", "published_at",
     "source_type", "confidence", "source_run_id", "tdf_hash",
+    "schema_version", "text_model", "image_model",
+    "model_provider", "model_permissiveness",
+    "generation_id", "graph_state_hash",
 ]
 
 
@@ -65,6 +71,16 @@ class GraphManager:
         await self.pool.close()
         logger.info("Database pool closed")
 
+    async def compute_graph_state_hash(self) -> str:
+        async with self.pool.acquire() as conn:
+            nc = await conn.fetchval("SELECT count(*) FROM nodes")
+            ec = await conn.fetchval("SELECT count(*) FROM edges")
+            latest_hash = await conn.fetchval(
+                "SELECT tdf_hash FROM nodes ORDER BY created_at DESC LIMIT 1"
+            ) or ""
+        raw = f"{nc}:{ec}:{latest_hash}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
     async def node_count(self) -> int:
         async with self.pool.acquire() as conn:
             return await conn.fetchval("SELECT count(*) FROM nodes")
@@ -76,6 +92,14 @@ class GraphManager:
     async def add_node(self, node_id: str, **attrs) -> None:
         if not attrs.get("tdf_hash"):
             attrs["tdf_hash"] = compute_tdf_hash({"slug": node_id.split("/")[-1] if "/" in node_id else node_id, **attrs})
+
+        # Compute graph state hash if not provided
+        if not attrs.get("graph_state_hash"):
+            attrs["graph_state_hash"] = await self.compute_graph_state_hash()
+
+        # Default to current schema version for new writes
+        if not attrs.get("schema_version"):
+            attrs["schema_version"] = CURRENT_SCHEMA_VERSION
 
         async with self.pool.acquire() as conn:
             tags = attrs.get("tags", [])
@@ -93,14 +117,20 @@ class GraphManager:
                     created_by, tags, one_liner, figures,
                     flash_timepoint_id, flash_slug, flash_share_url, era,
                     image_url,
-                    created_at, source_type, confidence, source_run_id, tdf_hash
+                    created_at, source_type, confidence, source_run_id, tdf_hash,
+                    schema_version, text_model, image_model,
+                    model_provider, model_permissiveness,
+                    generation_id, graph_state_hash
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
                     $15, $16, $17, $18,
                     $19, $20, $21, $22,
                     $23,
-                    $24, $25, $26, $27, $28
+                    $24, $25, $26, $27, $28,
+                    $29, $30, $31,
+                    $32, $33,
+                    $34, $35
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -128,7 +158,14 @@ class GraphManager:
                     source_type = EXCLUDED.source_type,
                     confidence = EXCLUDED.confidence,
                     source_run_id = EXCLUDED.source_run_id,
-                    tdf_hash = EXCLUDED.tdf_hash
+                    tdf_hash = EXCLUDED.tdf_hash,
+                    schema_version = EXCLUDED.schema_version,
+                    text_model = EXCLUDED.text_model,
+                    image_model = EXCLUDED.image_model,
+                    model_provider = EXCLUDED.model_provider,
+                    model_permissiveness = EXCLUDED.model_permissiveness,
+                    generation_id = EXCLUDED.generation_id,
+                    graph_state_hash = EXCLUDED.graph_state_hash
                 """,
                 node_id,
                 attrs.get("type", "event"),
@@ -158,6 +195,13 @@ class GraphManager:
                 attrs.get("confidence"),
                 attrs.get("source_run_id"),
                 attrs.get("tdf_hash"),
+                attrs.get("schema_version", CURRENT_SCHEMA_VERSION),
+                attrs.get("text_model", ""),
+                attrs.get("image_model", ""),
+                attrs.get("model_provider", ""),
+                attrs.get("model_permissiveness", "unknown"),
+                attrs.get("generation_id", ""),
+                attrs.get("graph_state_hash", ""),
             )
         await self._auto_link(node_id)
 
@@ -167,8 +211,8 @@ class GraphManager:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO edges (source, target, type, weight, theme, description, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO edges (source, target, type, weight, theme, description, created_by, schema_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (source, target, type) DO NOTHING
                 """,
                 src, tgt, edge_type,
@@ -176,6 +220,7 @@ class GraphManager:
                 attrs.get("theme", ""),
                 attrs.get("description", ""),
                 attrs.get("created_by", "auto"),
+                attrs.get("schema_version", CURRENT_SCHEMA_VERSION),
             )
 
     async def get_node(self, node_id: str) -> dict | None:
@@ -362,9 +407,18 @@ class GraphManager:
             last_updated = await conn.fetchval(
                 "SELECT max(created_at) FROM nodes"
             )
+            schema_rows = await conn.fetch(
+                "SELECT coalesce(schema_version, '0.1') AS sv, count(*) AS cnt FROM nodes GROUP BY sv"
+            )
+            model_rows = await conn.fetch(
+                "SELECT text_model, count(*) AS cnt FROM nodes "
+                "WHERE text_model IS NOT NULL AND text_model != '' GROUP BY text_model"
+            )
         base["date_range"] = {"min_year": min_year, "max_year": max_year}
         base["avg_confidence"] = float(avg_conf) if avg_conf is not None else None
         base["last_updated"] = str(last_updated) if last_updated else None
+        base["schema_version_counts"] = {row["sv"]: row["cnt"] for row in schema_rows}
+        base["text_model_counts"] = {row["text_model"]: row["cnt"] for row in model_rows}
         return base
 
     async def list_moments(
@@ -476,8 +530,8 @@ class GraphManager:
             if node_year is not None and node_month > 0 and node_day > 0:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT $1, id, 'contemporaneous', 0.8, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT $1, id, 'contemporaneous', 0.8, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND year = $2 AND month_num = $3 AND day = $4
@@ -490,8 +544,8 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT id, $1, 'contemporaneous', 0.8, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT id, $1, 'contemporaneous', 0.8, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND year = $2 AND month_num = $3 AND day = $4
@@ -507,8 +561,8 @@ class GraphManager:
             if node_year is not None:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT $1, id, 'same_era', 0.3, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT $1, id, 'same_era', 0.3, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND year IS NOT NULL
@@ -526,8 +580,8 @@ class GraphManager:
                 # Precedes/follows: directional temporal edges for same-era nodes
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT $1, id, 'precedes', 0.4, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT $1, id, 'precedes', 0.4, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND year IS NOT NULL
@@ -543,8 +597,8 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT $1, id, 'follows', 0.4, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT $1, id, 'follows', 0.4, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND year IS NOT NULL
@@ -563,8 +617,8 @@ class GraphManager:
             if node_country:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT $1, id, 'same_location', 0.5, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT $1, id, 'same_location', 0.5, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND country = $2 AND region = $3 AND city = $4
@@ -577,8 +631,8 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, created_by)
-                    SELECT id, $1, 'same_location', 0.5, 'auto'
+                    INSERT INTO edges (source, target, type, weight, created_by, schema_version)
+                    SELECT id, $1, 'same_location', 0.5, 'auto', '0.2'
                     FROM nodes
                     WHERE id != $1
                       AND country = $2 AND region = $3 AND city = $4
@@ -594,13 +648,13 @@ class GraphManager:
             if node_figures:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by, schema_version)
                     SELECT $1, n.id, 'same_figure', 0.6,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.figures)
                                ORDER BY 1
                            ), ', '),
-                           'auto'
+                           'auto', '0.2'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.figures && $2::text[]
@@ -613,13 +667,13 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by, schema_version)
                     SELECT n.id, $1, 'same_figure', 0.6,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.figures)
                                ORDER BY 1
                            ), ', '),
-                           'auto'
+                           'auto', '0.2'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.figures && $2::text[]
@@ -635,13 +689,13 @@ class GraphManager:
             if node_tags:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by, schema_version)
                     SELECT $1, n.id, 'thematic', 0.3,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
                                ORDER BY 1
                            ), ', '),
-                           'auto'
+                           'auto', '0.2'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.tags && $2::text[]
@@ -654,13 +708,13 @@ class GraphManager:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme, created_by)
+                    INSERT INTO edges (source, target, type, weight, theme, created_by, schema_version)
                     SELECT n.id, $1, 'thematic', 0.3,
                            array_to_string(ARRAY(
                                SELECT unnest($2::text[]) INTERSECT SELECT unnest(n.tags)
                                ORDER BY 1
                            ), ', '),
-                           'auto'
+                           'auto', '0.2'
                     FROM nodes n
                     WHERE n.id != $1
                       AND n.tags && $2::text[]

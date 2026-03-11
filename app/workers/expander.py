@@ -294,6 +294,9 @@ class GraphExpander:
         if await self.gm.get_node(path):
             return False
 
+        # Derive provider from model ID (e.g. "deepseek/deepseek-chat-v3-0324" -> "deepseek")
+        model_provider = self.model.split("/")[0] if "/" in self.model else "openrouter"
+
         await self.gm.add_node(
             path,
             type="event",
@@ -316,6 +319,11 @@ class GraphExpander:
             figures=event.get("figures", []),
             flash_timepoint_id=None,
             created_at=datetime.now(timezone.utc).isoformat(),
+            text_model=self.model,
+            image_model="",
+            model_provider=model_provider,
+            model_permissiveness="permissive",
+            generation_id=f"expander-{source_node_id}",
         )
 
         edge_type = event.get("edge_type", "thematic")

@@ -39,7 +39,14 @@ CREATE TABLE IF NOT EXISTS nodes (
     source_type TEXT DEFAULT 'historical',
     confidence FLOAT,
     source_run_id TEXT,
-    tdf_hash TEXT NOT NULL
+    tdf_hash TEXT NOT NULL,
+    schema_version TEXT DEFAULT '0.1',
+    text_model TEXT DEFAULT '',
+    image_model TEXT DEFAULT '',
+    model_provider TEXT DEFAULT '',
+    model_permissiveness TEXT DEFAULT 'unknown',
+    generation_id TEXT DEFAULT '',
+    graph_state_hash TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -50,6 +57,7 @@ CREATE TABLE IF NOT EXISTS edges (
     theme TEXT DEFAULT '',
     description TEXT DEFAULT '',
     created_by TEXT DEFAULT 'auto',
+    schema_version TEXT DEFAULT '0.1',
     PRIMARY KEY (source, target, type)
 );
 """
@@ -166,6 +174,22 @@ async def run_migrations(pool: asyncpg.Pool):
             )
             if updated and updated != "UPDATE 0":
                 logger.info("Migration 004c: reclassified contemporaneous -> same_era: %s", updated)
+
+        # 005: schema versioning + model provenance columns
+        sv_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'schema_version'"
+        )
+        if not sv_exists:
+            await conn.execute("ALTER TABLE nodes ADD COLUMN schema_version TEXT DEFAULT '0.1'")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN text_model TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN image_model TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN model_provider TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN model_permissiveness TEXT DEFAULT 'unknown'")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN generation_id TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN graph_state_hash TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE edges ADD COLUMN schema_version TEXT DEFAULT '0.1'")
+            logger.info("Migration 005: added schema versioning and model provenance columns")
 
 
 async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):

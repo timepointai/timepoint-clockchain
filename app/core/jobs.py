@@ -179,6 +179,23 @@ class JobManager:
 
             image_url = result.get("image_url")
 
+            # Extract model provenance from Flash response
+            text_model = result.get("text_model_used", "")
+            image_model = result.get("image_model_used", "")
+            model_provider = result.get("model_provider", "")
+            model_permissiveness = result.get("model_permissiveness", "")
+            # Infer provider/permissiveness if Flash didn't return them
+            if not model_provider and text_model:
+                if "/" in text_model:
+                    model_provider = text_model.split("/")[0]
+                elif "gemini" in text_model.lower():
+                    model_provider = "google"
+            if not model_permissiveness and model_provider:
+                model_permissiveness = (
+                    "restricted" if model_provider in ("google", "anthropic", "openai")
+                    else "permissive"
+                )
+
             await self.graph_manager.add_node(
                 path,
                 type="event",
@@ -204,6 +221,11 @@ class JobManager:
                 era=result.get("era", ""),
                 image_url=image_url,
                 created_at=datetime.now(timezone.utc).isoformat(),
+                text_model=text_model,
+                image_model=image_model,
+                model_provider=model_provider,
+                model_permissiveness=model_permissiveness or "unknown",
+                generation_id=flash_id or job.id,
             )
 
             job.path = path

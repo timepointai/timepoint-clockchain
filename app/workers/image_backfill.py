@@ -130,6 +130,9 @@ class ImageBackfillWorker:
             flash_slug = result.get("slug")
             if flash_slug:
                 updates["flash_slug"] = flash_slug
+            image_model = result.get("image_model_used")
+            if image_model:
+                updates["image_model"] = image_model
 
             await self.gm.update_node(node_id, **updates)
             return True

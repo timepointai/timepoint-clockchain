@@ -41,6 +41,12 @@ async def ingest_subgraph(
             confidence=node.confidence,
             source_run_id=node.source_run_id,
             tdf_hash=node.tdf_hash,
+            schema_version=node.schema_version,
+            text_model=node.text_model,
+            image_model=node.image_model,
+            model_provider=node.model_provider,
+            model_permissiveness=node.model_permissiveness,
+            generation_id=node.generation_id,
         )
         node_count += 1
 
