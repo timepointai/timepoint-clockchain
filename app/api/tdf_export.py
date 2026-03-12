@@ -26,6 +26,7 @@ def node_to_tdf_record(node_id: str, attrs: dict) -> TDFRecord:
                 "updated_at",
                 "flash_timepoint_id",
                 "confidence",
+                "graph_state_hash",
             )
         },
     )

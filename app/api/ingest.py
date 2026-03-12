@@ -41,6 +41,12 @@ async def ingest_subgraph(
             confidence=node.confidence,
             source_run_id=node.source_run_id,
             tdf_hash=node.tdf_hash,
+            schema_version=node.schema_version,
+            text_model=node.text_model,
+            image_model=node.image_model,
+            model_provider=node.model_provider,
+            model_permissiveness=node.model_permissiveness,
+            generation_id=node.generation_id,
         )
         node_count += 1
 
@@ -53,6 +59,8 @@ async def ingest_subgraph(
                 edge.type,
                 weight=edge.weight,
                 theme=edge.theme,
+                description=edge.description,
+                created_by=edge.created_by,
             )
             edge_count += 1
         except ValueError:

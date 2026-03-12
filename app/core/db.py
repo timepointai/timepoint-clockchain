@@ -39,15 +39,25 @@ CREATE TABLE IF NOT EXISTS nodes (
     source_type TEXT DEFAULT 'historical',
     confidence FLOAT,
     source_run_id TEXT,
-    tdf_hash TEXT NOT NULL
+    tdf_hash TEXT NOT NULL,
+    schema_version TEXT DEFAULT '0.1',
+    text_model TEXT DEFAULT '',
+    image_model TEXT DEFAULT '',
+    model_provider TEXT DEFAULT '',
+    model_permissiveness TEXT DEFAULT 'unknown',
+    generation_id TEXT DEFAULT '',
+    graph_state_hash TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS edges (
     source TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     target TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('causes','contemporaneous','same_location','thematic')),
+    type TEXT NOT NULL CHECK (type IN ('causes','caused_by','influences','contemporaneous','same_era','same_location','same_conflict','same_figure','thematic','precedes','follows')),
     weight FLOAT DEFAULT 1.0,
     theme TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    created_by TEXT DEFAULT 'auto',
+    schema_version TEXT DEFAULT '0.1',
     PRIMARY KEY (source, target, type)
 );
 """
@@ -113,6 +123,73 @@ async def run_migrations(pool: asyncpg.Pool):
         if not col_exists:
             await conn.execute("ALTER TABLE nodes ADD COLUMN image_url TEXT")
             logger.info("Migration 003: added image_url column")
+
+        # 004: expand edge types + add description/created_by columns
+        desc_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'edges' AND column_name = 'description'"
+        )
+        if not desc_exists:
+            await conn.execute("ALTER TABLE edges ADD COLUMN description TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE edges ADD COLUMN created_by TEXT DEFAULT 'auto'")
+            logger.info("Migration 004: added description and created_by columns to edges")
+
+        # 004b: expand edge type CHECK constraint (idempotent)
+        # Check if the constraint already includes the new types
+        constraint_def = await conn.fetchval("""
+            SELECT pg_get_constraintdef(oid) FROM pg_constraint
+            WHERE conrelid = 'edges'::regclass
+              AND contype = 'c'
+              AND pg_get_constraintdef(oid) LIKE '%type%'
+        """)
+        needs_update = constraint_def and "same_era" not in (constraint_def or "")
+        if needs_update:
+            try:
+                old_name = await conn.fetchval("""
+                    SELECT conname FROM pg_constraint
+                    WHERE conrelid = 'edges'::regclass
+                      AND contype = 'c'
+                      AND pg_get_constraintdef(oid) LIKE '%type%'
+                """)
+                if old_name:
+                    await conn.execute(f"ALTER TABLE edges DROP CONSTRAINT {old_name}")
+                await conn.execute("""
+                    ALTER TABLE edges ADD CONSTRAINT edges_type_check
+                    CHECK (type IN ('causes','caused_by','influences','contemporaneous','same_era',
+                                    'same_location','same_conflict','same_figure','thematic',
+                                    'precedes','follows'))
+                """)
+                logger.info("Migration 004b: updated edge type CHECK constraint")
+            except Exception as e:
+                logger.warning("Migration 004b: could not update CHECK constraint: %s", e)
+
+        # 004c: reclassify old broken contemporaneous edges to same_era (one-time)
+        # Only reclassify edges that were created by 'auto' (the old broken _auto_link)
+        # and have created_by='auto' (the default). New legitimate contemporaneous edges
+        # from the expander will have created_by='expander'.
+        if not desc_exists:
+            # This runs only when the description column was just added (first deploy)
+            updated = await conn.execute(
+                "UPDATE edges SET type = 'same_era' WHERE type = 'contemporaneous'"
+            )
+            if updated and updated != "UPDATE 0":
+                logger.info("Migration 004c: reclassified contemporaneous -> same_era: %s", updated)
+
+        # 005: schema versioning + model provenance columns
+        sv_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'schema_version'"
+        )
+        if not sv_exists:
+            await conn.execute("ALTER TABLE nodes ADD COLUMN schema_version TEXT DEFAULT '0.1'")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN text_model TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN image_model TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN model_provider TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN model_permissiveness TEXT DEFAULT 'unknown'")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN generation_id TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN graph_state_hash TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE edges ADD COLUMN schema_version TEXT DEFAULT '0.1'")
+            logger.info("Migration 005: added schema versioning and model provenance columns")
 
 
 async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):
@@ -241,6 +318,8 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                         "type": edge.get("type", "thematic"),
                         "weight": edge.get("weight", 1.0),
                         "theme": edge.get("theme", ""),
+                        "description": edge.get("description", ""),
+                        "schema_version": edge.get("schema_version", "0.2"),
                     })
 
                 prov = rec.get("provenance", {})
@@ -253,12 +332,15 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                         country, region, city, slug, layer, visibility,
                         created_by, tags, one_liner, figures,
                         flash_timepoint_id, created_at,
-                        confidence, source_run_id, tdf_hash
+                        confidence, source_run_id, tdf_hash,
+                        schema_version, text_model, image_model,
+                        model_provider, model_permissiveness
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8,
                         $9, $10, $11, $12, $13, $14,
                         $15, $16, $17, $18,
-                        $19, $20, $21, $22, $23
+                        $19, $20, $21, $22, $23,
+                        $24, $25, $26, $27, $28
                     )
                     ON CONFLICT (id) DO NOTHING
                     """,
@@ -285,13 +367,18 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                     prov.get("confidence"),
                     prov.get("run_id"),
                     tdf_hash,
+                    payload.get("schema_version", "0.2"),
+                    payload.get("text_model", ""),
+                    payload.get("image_model", ""),
+                    payload.get("model_provider", ""),
+                    payload.get("model_permissiveness", "unknown"),
                 )
 
             for edge in deferred_edges:
                 await conn.execute(
                     """
-                    INSERT INTO edges (source, target, type, weight, theme)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO edges (source, target, type, weight, theme, description, schema_version)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (source, target, type) DO NOTHING
                     """,
                     edge["source"],
@@ -299,4 +386,6 @@ async def _seed_from_jsonl(pool: asyncpg.Pool, path: Path):
                     edge["type"],
                     edge["weight"],
                     edge["theme"],
+                    edge.get("description", ""),
+                    edge.get("schema_version", "0.2"),
                 )

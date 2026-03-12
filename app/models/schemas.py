@@ -20,6 +20,8 @@ class EdgeResponse(BaseModel):
     edge_type: str
     weight: float = 1.0
     theme: str = ""
+    description: str = ""
+    created_by: str = "auto"
 
 
 class MomentResponse(BaseModel):
@@ -45,6 +47,12 @@ class MomentResponse(BaseModel):
     image_url: str | None = None
     created_at: str = ""
     published_at: str = ""
+    schema_version: str = "0.1"
+    text_model: str = ""
+    image_model: str = ""
+    model_provider: str = ""
+    model_permissiveness: str = "unknown"
+    generation_id: str = ""
     edges: list[EdgeResponse] = Field(default_factory=list)
 
 
@@ -88,6 +96,9 @@ class MomentListItem(BaseModel):
     source_type: str = "historical"
     confidence: float | None = None
     image_url: str | None = None
+    schema_version: str = "0.1"
+    text_model: str = ""
+    image_model: str = ""
 
 
 class PaginatedMomentsResponse(BaseModel):
@@ -102,6 +113,8 @@ class EnhancedStatsResponse(GraphStatsResponse):
     avg_confidence: float | None = None
     last_updated: str | None = None
     nodes_with_images: int = 0
+    schema_version_counts: dict[str, int] = Field(default_factory=dict)
+    text_model_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class GenerateRequest(BaseModel):
@@ -154,6 +167,12 @@ class SubgraphNodeInput(BaseModel):
     confidence: float | None = None
     source_run_id: str | None = None
     tdf_hash: str | None = None
+    schema_version: str = "0.2"
+    text_model: str = ""
+    image_model: str = ""
+    model_provider: str = ""
+    model_permissiveness: str = "unknown"
+    generation_id: str = ""
 
 
 class SubgraphEdgeInput(BaseModel):
@@ -162,6 +181,8 @@ class SubgraphEdgeInput(BaseModel):
     type: str = "thematic"
     weight: float = 1.0
     theme: str = ""
+    description: str = ""
+    created_by: str = "auto"
 
 
 class SubgraphIngestRequest(BaseModel):

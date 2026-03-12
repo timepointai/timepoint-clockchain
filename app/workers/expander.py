@@ -20,7 +20,7 @@ Location: {country}, {region}, {city}
 Description: {one_liner}
 
 Return a JSON array of objects, each with:
-- "name": event name
+- "name": clean human-readable event name (e.g. "Apollo 1 Fire", NOT slugified)
 - "year": integer (negative for BCE)
 - "month": lowercase month name (e.g. "march")
 - "day": integer
@@ -31,7 +31,19 @@ Return a JSON array of objects, each with:
 - "one_liner": one sentence description
 - "tags": list of lowercase hyphenated tags
 - "figures": list of historical figure names
-- "edge_type": one of "causes", "contemporaneous", "same_location", "thematic"
+- "edge_type": one of "causes", "caused_by", "influences", "contemporaneous", "same_era", "same_location", "same_conflict", "same_figure", "thematic", "precedes", "follows"
+- "description": 1-2 sentence explanation of WHY this event is related to the source event
+
+Edge type guide:
+- causes/caused_by: direct causal link
+- influences: indirect influence, softer than causes
+- contemporaneous: EXACT same date (year+month+day)
+- same_era: same decade, no direct causal link
+- same_location: same country+region+city
+- same_conflict: events in the same war/revolution/movement
+- same_figure: shared historical figure
+- thematic: shared themes or tags
+- precedes/follows: temporal ordering within the same era
 
 Return ONLY the JSON array, no other text."""
 
@@ -232,16 +244,21 @@ class GraphExpander:
 
         try:
             job = self.jm.create_job(
-                query=query, preset="balanced", visibility="public"
+                query=query, preset="balanced", visibility="public",
+                override_name=name,
             )
             await self.jm.process_job(job)
 
             if job.status == "completed" and job.path:
                 edge_type = event.get("edge_type", "thematic")
-                if edge_type in {"causes", "contemporaneous", "same_location", "thematic"}:
+                from app.core.graph import VALID_EDGE_TYPES
+                if edge_type in VALID_EDGE_TYPES:
                     try:
+                        description = event.get("description", "")
                         await self.gm.add_edge(
-                            source_node_id, job.path, edge_type, weight=0.5
+                            source_node_id, job.path, edge_type,
+                            weight=0.5, description=description,
+                            created_by="expander",
                         )
                     except ValueError:
                         pass
@@ -277,6 +294,9 @@ class GraphExpander:
         if await self.gm.get_node(path):
             return False
 
+        # Derive provider from model ID (e.g. "deepseek/deepseek-chat-v3-0324" -> "deepseek")
+        model_provider = self.model.split("/")[0] if "/" in self.model else "openrouter"
+
         await self.gm.add_node(
             path,
             type="event",
@@ -299,12 +319,23 @@ class GraphExpander:
             figures=event.get("figures", []),
             flash_timepoint_id=None,
             created_at=datetime.now(timezone.utc).isoformat(),
+            text_model=self.model,
+            image_model="",
+            model_provider=model_provider,
+            model_permissiveness="permissive",
+            generation_id=f"expander-{source_node_id}",
         )
 
         edge_type = event.get("edge_type", "thematic")
-        if edge_type in {"causes", "contemporaneous", "same_location", "thematic"}:
+        from app.core.graph import VALID_EDGE_TYPES
+        if edge_type in VALID_EDGE_TYPES:
             try:
-                await self.gm.add_edge(source_node_id, path, edge_type, weight=0.5)
+                description = event.get("description", "")
+                await self.gm.add_edge(
+                    source_node_id, path, edge_type,
+                    weight=0.5, description=description,
+                    created_by="expander",
+                )
             except ValueError:
                 pass
         return True

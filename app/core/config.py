@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     EXPANSION_TARGET: int = 0
     EXPANSION_DAILY_BUDGET: float = 5.0
     DAILY_CRON_ENABLED: bool = False
-    IMAGE_BACKFILL_ENABLED: bool = False
-    IMAGE_BACKFILL_INTERVAL: int = 600
     DATABASE_URL: str = ""
     ADMIN_KEY: str = ""
     RATE_LIMIT_PUBLIC: str = "60/minute"

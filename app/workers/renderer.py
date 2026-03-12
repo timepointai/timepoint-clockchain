@@ -12,7 +12,7 @@ class FlashClient:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"X-Service-Key": self.service_key},
-            timeout=300.0,
+            timeout=480.0,
         )
 
     async def generate_sync(
@@ -21,9 +21,12 @@ class FlashClient:
         preset: str = "balanced",
         request_context: dict | None = None,
         generate_image: bool = True,
+        model_policy: str | None = None,
     ) -> dict:
-        logger.info("Flash generate: query=%r preset=%s generate_image=%s", query, preset, generate_image)
+        logger.info("Flash generate: query=%r preset=%s generate_image=%s model_policy=%s", query, preset, generate_image, model_policy)
         body: dict = {"query": query, "preset": preset, "generate_image": generate_image}
+        if model_policy:
+            body["model_policy"] = model_policy
         if request_context:
             body["request_context"] = request_context
         resp = await self._client.post(

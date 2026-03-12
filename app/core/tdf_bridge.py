@@ -10,6 +10,17 @@ _PROVENANCE_KEYS = {
     "flash_timepoint_id",
     "created_at",
     "published_at",
+    "graph_state_hash",
+}
+
+# Model provenance fields — included in payload until TDF spec adds them to TDFProvenance
+_MODEL_PROVENANCE_KEYS = {
+    "schema_version",
+    "text_model",
+    "image_model",
+    "model_provider",
+    "model_permissiveness",
+    "generation_id",
 }
 
 
