@@ -11,10 +11,6 @@ _PROVENANCE_KEYS = {
     "created_at",
     "published_at",
     "graph_state_hash",
-}
-
-# Model provenance fields — included in payload until TDF spec adds them to TDFProvenance
-_MODEL_PROVENANCE_KEYS = {
     "schema_version",
     "text_model",
     "image_model",
@@ -22,6 +18,30 @@ _MODEL_PROVENANCE_KEYS = {
     "model_permissiveness",
     "generation_id",
 }
+
+
+def _build_provenance(attrs: dict, generator: str) -> TDFProvenance:
+    """Build TDFProvenance, using model fields if TDF >= 1.2.0 supports them."""
+    base = dict(
+        generator=generator,
+        confidence=attrs.get("confidence"),
+        run_id=attrs.get("source_run_id"),
+        flash_id=attrs.get("flash_timepoint_id"),
+    )
+    # TDF v1.2.0 added model provenance fields to TDFProvenance
+    model_fields = {
+        "text_model": attrs.get("text_model"),
+        "image_model": attrs.get("image_model"),
+        "model_provider": attrs.get("model_provider"),
+        "model_permissiveness": attrs.get("model_permissiveness"),
+        "schema_version": attrs.get("schema_version", "0.2"),
+        "generation_id": attrs.get("generation_id"),
+    }
+    try:
+        return TDFProvenance(**base, **model_fields)
+    except TypeError:
+        # TDF < 1.2.0 doesn't have model fields on TDFProvenance
+        return TDFProvenance(**base)
 
 
 def make_tdf_record(
@@ -46,12 +66,7 @@ def make_tdf_record(
         id=node_id,
         source="clockchain",
         timestamp=created_at,
-        provenance=TDFProvenance(
-            generator=generator,
-            confidence=attrs.get("confidence"),
-            run_id=attrs.get("source_run_id"),
-            flash_id=attrs.get("flash_timepoint_id"),
-        ),
+        provenance=_build_provenance(attrs, generator),
         payload=payload,
     )
 
@@ -69,6 +84,12 @@ def tdf_to_node_attrs(record: TDFRecord) -> tuple[str, dict]:
         attrs["source_run_id"] = record.provenance.run_id
     if record.provenance.flash_id is not None:
         attrs["flash_timepoint_id"] = record.provenance.flash_id
+    # Model provenance (TDF >= 1.2.0)
+    for field in ("text_model", "image_model", "model_provider",
+                  "model_permissiveness", "schema_version", "generation_id"):
+        val = getattr(record.provenance, field, None)
+        if val is not None:
+            attrs[field] = val
     attrs["tdf_hash"] = record.tdf_hash
     attrs["created_at"] = record.timestamp.isoformat()
     return record.id, attrs
