@@ -12,7 +12,7 @@ class FlashClient:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"X-Service-Key": self.service_key},
-            timeout=180.0,
+            timeout=300.0,
         )
 
     async def generate_sync(
