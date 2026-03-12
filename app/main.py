@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.api import api_router
@@ -133,6 +134,27 @@ app = FastAPI(
     license_info={"name": "Apache 2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
 )
 app.include_router(api_router)
+
+# CORS — allow timepointai.com subdomains + configurable extras
+_cors_origins: list[str] = [
+    "https://timepointai.com",
+    "https://app.timepointai.com",
+    "https://api.timepointai.com",
+    "https://flash.timepointai.com",
+    "http://localhost:3000",
+]
+settings = get_settings()
+if settings.CORS_ORIGINS:
+    _cors_origins.extend(
+        origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()
+    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/", tags=["System"], include_in_schema=False)
