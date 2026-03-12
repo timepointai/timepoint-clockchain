@@ -10,7 +10,6 @@ logger = logging.getLogger("clockchain.iterator")
 IMMUTABLE_FIELDS = frozenset({
     "schema_version",
     "text_model",
-    "image_model",
     "model_provider",
     "model_permissiveness",
     "generation_id",
@@ -22,6 +21,12 @@ IMMUTABLE_FIELDS = frozenset({
     "flash_timepoint_id",
 })
 
+# Fields that are immutable once set, but can be backfilled when empty.
+# This allows first-time population without permitting overwrites.
+BACKFILLABLE_FIELDS = frozenset({
+    "image_model",  # set when backfilling images, never changed after
+})
+
 # Fields the iterator may enhance (add to, improve, backfill).
 MUTABLE_FIELDS = frozenset({
     "tags",          # can add, never remove
@@ -29,6 +34,7 @@ MUTABLE_FIELDS = frozenset({
     "one_liner",     # can improve if empty or low quality
     "era",           # can backfill if missing
     "visibility",    # can promote private -> public after quality check
+    "image_url",     # can backfill if missing (failed render, timeout)
 })
 
 BATCH_SIZE = 50
@@ -56,7 +62,7 @@ class IteratorWorker:
         """Register an enhancement pass function.
 
         Each pass receives (node_id: str, node: dict, gm: GraphManager)
-        and returns a dict of mutable field updates, or None to skip.
+        and returns a dict of field updates, or None to skip.
         """
         self._passes.append(fn)
         return fn
@@ -107,6 +113,15 @@ class IteratorWorker:
                                     "Pass %s tried to modify immutable field %s on %s — blocked",
                                     pass_fn.__name__, key, node_id,
                                 )
+                            elif key in BACKFILLABLE_FIELDS:
+                                current_value = node.get(key)
+                                if current_value:
+                                    logger.warning(
+                                        "Pass %s tried to overwrite backfillable field %s on %s — blocked",
+                                        pass_fn.__name__, key, node_id,
+                                    )
+                                else:
+                                    updates[key] = result[key]
                             elif key in MUTABLE_FIELDS:
                                 updates[key] = result[key]
                 except Exception as e:
@@ -157,3 +172,59 @@ async def backfill_era(node_id: str, node: dict, gm: GraphManager) -> dict | Non
     else:
         era = "contemporary"
     return {"era": era}
+
+
+def make_backfill_images_pass(flash_client):
+    """Create an image backfill pass that uses the given FlashClient.
+
+    Finds nodes with no image_url, calls Flash to generate an image,
+    and returns the image_url and image_model for update.
+    """
+
+    async def backfill_images(node_id: str, node: dict, gm: GraphManager) -> dict | None:
+        if node.get("image_url"):
+            return None
+
+        # Skip seed nodes (layer 0) — they don't need images
+        if node.get("layer", 0) == 0:
+            return None
+
+        name = node.get("name", "")
+        year = node.get("year", "")
+        country = node.get("country", "")
+        city = node.get("city", "")
+        query = f"{name}, {year}, {country}, {city}".strip(", ")
+
+        logger.info("Backfilling image for %s: %s", node_id, query)
+
+        try:
+            result = await flash_client.generate_sync(
+                query=query,
+                preset="balanced",
+                request_context={
+                    "source": "clockchain",
+                    "worker": "iterator-backfill",
+                    "node_id": node_id,
+                },
+                generate_image=True,
+                model_policy="permissive",
+            )
+
+            image_url = result.get("image_url")
+            if not image_url:
+                logger.warning("Backfill for %s returned no image_url", node_id)
+                return None
+
+            image_model = result.get("image_model_used", "")
+            logger.info("Backfill image for %s: %s (model=%s)", node_id, image_url, image_model)
+
+            updates = {"image_url": image_url}
+            if image_model:
+                updates["image_model"] = image_model
+            return updates
+
+        except Exception as e:
+            logger.error("Image backfill failed for %s: %s", node_id, e)
+            return None
+
+    return backfill_images

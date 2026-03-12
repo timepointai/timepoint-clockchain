@@ -81,6 +81,18 @@ async def lifespan(application: FastAPI):
         except ImportError:
             pass
 
+    # Iterator worker — enhancement passes
+    iterator_task = None
+    try:
+        from app.workers.iterator import IteratorWorker, backfill_era, make_backfill_images_pass
+        iterator = IteratorWorker(gm, interval_seconds=600)
+        iterator.register_pass(backfill_era)
+        iterator.register_pass(make_backfill_images_pass(flash_client))
+        iterator_task = asyncio.create_task(iterator.start())
+        logger.info("Iterator worker started")
+    except ImportError:
+        pass
+
     yield
 
     # Shutdown
@@ -88,6 +100,8 @@ async def lifespan(application: FastAPI):
         expander_task.cancel()
     if daily_task:
         daily_task.cancel()
+    if iterator_task:
+        iterator_task.cancel()
     await gm.close()
     logger.info("Clockchain shutting down")
 
