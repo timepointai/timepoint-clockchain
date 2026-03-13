@@ -138,9 +138,12 @@ app.include_router(api_router)
 # CORS — allow timepointai.com subdomains + configurable extras
 _cors_origins: list[str] = [
     "https://timepointai.com",
+    "https://timepoint.ai",
     "https://app.timepointai.com",
     "https://api.timepointai.com",
     "https://flash.timepointai.com",
+    "https://clockchain.timepointai.com",
+    "https://pro.timepointai.com",
     "http://localhost:3000",
 ]
 settings = get_settings()
