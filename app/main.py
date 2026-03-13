@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 
 from app.api import api_router
@@ -135,6 +136,38 @@ app = FastAPI(
 )
 app.include_router(api_router)
 
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+        contact=app.contact,
+        license_info=app.license_info,
+    )
+    schema["components"]["securitySchemes"] = {
+        "ServiceKey": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-Service-Key",
+            "description": (
+                "Service authentication key. Required for all endpoints "
+                "except Public (read-only) and System."
+            ),
+        }
+    }
+    # Apply security globally — Public endpoints override with empty security
+    schema["security"] = [{"ServiceKey": []}]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi  # type: ignore[method-assign]
+
 # CORS — allow timepointai.com subdomains + configurable extras
 _cors_origins: list[str] = [
     "https://timepointai.com",
@@ -168,7 +201,7 @@ async def root(request: Request):
     return {"service": "timepoint-clockchain", "version": "0.2.0"}
 
 
-@app.get("/health", tags=["System"])
+@app.get("/health", tags=["System"], openapi_extra={"security": []})
 async def health():
     gm = getattr(app.state, "graph_manager", None)
     nodes = await gm.node_count() if gm else 0

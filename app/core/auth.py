@@ -1,8 +1,12 @@
 import hmac
 
 from fastapi import Header, HTTPException
+from fastapi.security import APIKeyHeader
 
 from app.core.config import get_settings
+
+# OpenAPI security scheme — shows "Authorize" button in /docs
+service_key_scheme = APIKeyHeader(name="X-Service-Key", auto_error=False)
 
 
 async def verify_service_key(
