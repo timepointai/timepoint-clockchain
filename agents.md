@@ -17,7 +17,7 @@ Part of the TIMEPOINT platform. Clockchain is publicly accessible at `clockchain
 | **timepoint-web-app** | End consumer (via gateway) | Indirect |
 | **timepoint-iphone-app** | End consumer (via gateway) | Indirect |
 | **timepoint-billing** | Apple IAP verification, credit management | Sibling (no direct calls) |
-| **timepoint-clockchain-deploy-private** | Production Railway deploy wrapper | Downstream |
+| **timepoint-clockchain-deploy** | Production deploy wrapper | Downstream |
 
 The gateway and Flash are the primary inbound callers. Web and iPhone clients reach clockchain through the gateway at `api.timepointai.com/api/v1/clockchain/*`. Clockchain calls Flash for scene generation.
 

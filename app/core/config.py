@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     SERVICE_API_KEY: str = ""
-    FLASH_URL: str = "http://timepoint-flash-deploy.railway.internal:8080"
+    FLASH_URL: str = ""
     FLASH_SERVICE_KEY: str = ""
     DATA_DIR: str = "./data"
     ENVIRONMENT: str = "development"
