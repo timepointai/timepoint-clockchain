@@ -292,7 +292,7 @@ On startup, the service:
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | | PostgreSQL connection URL |
 | `SERVICE_API_KEY` | Yes | | Shared secret for inbound service auth |
-| `FLASH_URL` | No | `http://timepoint-flash-deploy.railway.internal:8080` | Flash service URL |
+| `FLASH_URL` | No | `https://flash.timepointai.com` | Flash service URL |
 | `FLASH_SERVICE_KEY` | Yes | | Auth key for Flash API calls |
 | `DATA_DIR` | No | `./data` | Directory for seed data |
 | `ENVIRONMENT` | No | `development` | Environment name |
@@ -329,7 +329,7 @@ DATABASE_URL=postgresql://localhost:5432/clockchain_test pytest tests/ -v
 
 ## Deployment
 
-Deployed on Railway via the [timepoint-clockchain-deploy-private](https://github.com/timepointai/timepoint-clockchain-deploy-private) repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
+Deployed on Railway via a private deploy repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
 
 ## Seed Data
 
