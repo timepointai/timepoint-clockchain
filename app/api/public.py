@@ -30,7 +30,7 @@ def _normalize_node(node: dict) -> dict:
     return node
 
 
-@router.get("/moments", response_model=PaginatedMomentsResponse)
+@router.get("/moments", response_model=PaginatedMomentsResponse, openapi_extra={"security": []})
 @limiter.limit(lambda: get_settings().RATE_LIMIT_PUBLIC)
 async def list_moments(
     request: Request,
@@ -78,7 +78,7 @@ async def list_moments(
     )
 
 
-@router.get("/moments/{path:path}")
+@router.get("/moments/{path:path}", openapi_extra={"security": []})
 @limiter.limit(lambda: get_settings().RATE_LIMIT_PUBLIC)
 async def get_moment_detail(
     request: Request,
@@ -112,7 +112,7 @@ async def get_moment_detail(
     return _normalize_node(node)
 
 
-@router.get("/stats", response_model=EnhancedStatsResponse)
+@router.get("/stats", response_model=EnhancedStatsResponse, openapi_extra={"security": []})
 @limiter.limit(lambda: get_settings().RATE_LIMIT_PUBLIC)
 async def public_stats(
     request: Request,

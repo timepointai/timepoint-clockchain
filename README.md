@@ -1,25 +1,5 @@
 # timepoint-clockchain
 
-## Changes 2026-03-10 — Image generation, public API fixes, OpenAPI docs
-
-- **Image generation for all nodes** — new `image_url` column on nodes; `ImageBackfillWorker` retroactively generates images for existing nodes via Flash; all new nodes are generated with `generate_image=true` by default
-- **Public API fixes** — `enhanced_stats()` and `list_moments()` methods added to GraphManager; `/api/v1/stats` and `/api/v1/moments` (public, paginated) now return 200 instead of 500
-- **Rate limiting config** — `RATE_LIMIT_PUBLIC`, `RATE_LIMIT_AUTH_READ`, `RATE_LIMIT_AUTH_WRITE` settings added (were referenced by decorators but missing from config)
-- **OpenAPI / Swagger** — full interactive API docs at `/docs` (Swagger UI) and `/redoc` (ReDoc); tagged endpoint groups (Public, Browse, Graph, Generate, Ingest, System)
-- **Org rename** — all GitHub URLs updated from `timepoint-ai` to `timepointai`
-- 769 nodes, 5602 edges, 561 with images as of this release
-
-### Changes 2026-03-02 — TDF integration complete, branch protection locked
-
-- Added `timepoint-tdf` library dependency for cross-service data interchange
-- New `?format=tdf` query parameter on moments endpoint for TDF export
-- New `/ingest/tdf` endpoint for ingesting TDF records from sibling services
-- JSONL seed format support (`seeds.jsonl` preferred over legacy `seeds.json`)
-- Internal dedup hash (`compute_tdf_hash`) preserved alongside TDF interchange hash
-- Branch protection enforced: 1 approval required, last-pusher rule, no force push
-
----
-
 **Temporal causal graph for AI agents.** PostgreSQL-backed directed graph of historical moments — canonical spatiotemporal URLs, typed causal edges, autonomous expansion, and browse/search/discovery APIs.
 
 > [!NOTE]
@@ -47,6 +27,8 @@ flowchart TD
 
 Part of the [Timepoint AI](https://github.com/timepointai) suite — the Clockchain is the temporal causal graph that all other services read from and write to.
 
+**Deployed at:** `clockchain.timepointai.com` (via API gateway at `api.timepointai.com/api/v1/clockchain/*`)
+
 ## Graph Architecture
 
 The Clockchain is a directed graph stored in PostgreSQL (two tables: `nodes` and `edges`). Each node is a historical moment identified by a canonical temporal URL. Edges encode typed relationships between moments.
@@ -67,7 +49,7 @@ Every node has a unique spatiotemporal address — 8 segments encoding *when* an
   └─────────────────────────────────── year (negative = BCE)
 ```
 
-Negative years for BCE, all segments kebab-case. This path is both the node’s primary key and its API address.
+Negative years for BCE, all segments kebab-case. This path is both the node's primary key and its API address.
 
 ### Content Layers
 
@@ -77,16 +59,23 @@ Negative years for BCE, all segments kebab-case. This path is both the node’s 
 | 1 | Metadata: figures, tags, one-liner description | Clockchain graph (Postgres `nodes` table) |
 | 2 | Full Flash scene reference | `flash_timepoint_id` field in graph node |
 
-### Edge Types
+### Edge Types (Schema v0.2)
 
 | Type | Meaning | Auto-linked? |
 |------|---------|-------------|
-| `causes` | Causal relationship | No -- expander or manual only |
-| `contemporaneous` | Same year (+/- 1) | Yes, weight 0.5 |
+| `causes` | Direct causal relationship | No — expander or manual only |
+| `caused_by` | Inverse causal relationship | No — expander or manual only |
+| `influences` | Indirect influence | No — expander or manual only |
+| `precedes` | Temporal ordering | No — expander or manual only |
+| `follows` | Inverse temporal ordering | No — expander or manual only |
+| `same_era` | Same year (+/- 1) | Yes, weight 0.5 |
 | `same_location` | Matching country + region + city | Yes, weight 0.5 |
+| `same_conflict` | Part of the same military/political conflict | No — expander or manual only |
+| `same_figure` | Shared historical figure | No — expander or manual only |
 | `thematic` | Overlapping tags (array overlap) | Yes, weight 0.3 |
+| `contemporaneous` | Legacy alias for `same_era` | Supported for backwards compatibility |
 
-When a node is added via `add_node()`, the `_auto_link()` method creates bidirectional edges for `contemporaneous`, `same_location`, and `thematic` using efficient `INSERT...SELECT` queries.
+When a node is added via `add_node()`, the `_auto_link()` method creates bidirectional edges for `same_era`, `same_location`, and `thematic` using efficient `INSERT...SELECT` queries.
 
 ### Database Schema
 
@@ -96,17 +85,36 @@ Two tables with indexes:
 nodes (id TEXT PK, type, name, year, month, month_num, day, time,
        country, region, city, slug, layer, visibility, created_by,
        tags TEXT[], one_liner, figures TEXT[], flash_timepoint_id,
-       flash_slug, flash_share_url, era, image_url, created_at, published_at)
+       flash_slug, flash_share_url, era, image_url,
+       confidence FLOAT, source_run_id, tdf_hash, source_type,
+       schema_version, text_model, image_model,
+       model_provider, model_permissiveness, generation_id,
+       graph_state_hash, created_at, published_at)
 
 edges (source TEXT FK, target TEXT FK, type TEXT CHECK(...),
-       weight FLOAT, theme TEXT, PK(source, target, type))
+       weight FLOAT, theme TEXT, description TEXT, created_by TEXT,
+       schema_version TEXT, source_run_id TEXT,
+       PK(source, target, type))
 ```
 
 Indexes on: visibility, (month, day), year, (country, region, city), GIN on tags/figures, GIN trigram on name/one_liner (when pg_trgm is available).
 
-### Source Types
+### Model Provenance (Schema v0.2)
 
-Each node carries a `source_type` field indicating its origin:
+Every node tracks which models generated its content:
+
+| Field | Meaning |
+|-------|---------|
+| `text_model` | LLM used for text (e.g. `deepseek/deepseek-chat-v3-0324`) |
+| `image_model` | Model used for images (e.g. `stabilityai/stable-diffusion-3`) |
+| `model_provider` | Provider name (e.g. `deepseek`, `stabilityai`) |
+| `model_permissiveness` | Policy tier (`permissive`, `standard`, `unknown`) |
+| `generation_id` | Unique generation run ID |
+| `schema_version` | Schema version (`0.1`, `0.2`) |
+
+Clockchain enforces **permissive-only** models — blocked providers (google, anthropic, openai) are rejected at the compliance gate.
+
+### Source Types
 
 | Type | Meaning |
 |------|---------|
@@ -115,11 +123,9 @@ Each node carries a `source_type` field indicating its origin:
 | `simulation` | Output from Pro temporal simulation |
 | `predicted` | Rendered Future awaiting validation |
 
-Recent: `source_type` field added via migration. Subgraph ingest endpoint (`/api/v1/ingest/subgraph`). Extended `/api/v1/stats` with source_type breakdown.
-
 ### Interoperability
 
-Clockchain nodes are expressible as TDF records via `timepoint-tdf`. Coverage and quality metrics feed the planned **Timepoint Futures Index (TFI)**.
+Clockchain nodes are expressible as TDF records via `timepoint-tdf`. The TDF bridge (`app/core/tdf_bridge.py`) promotes model provenance fields to `TDFProvenance` (TDF v1.2.0+), with backwards-compatible fallback for older TDF versions.
 
 **Proof of Causal Convergence (PoCC)** is a future protocol concept: multiple independent renderings that converge on the same causal structure provide validation without ground truth. The Clockchain is the natural accumulation point for convergent paths.
 
@@ -129,11 +135,11 @@ Five background workers handle content generation and graph growth:
 
 | Worker | File | Purpose | Feature Flag |
 |--------|------|---------|-------------|
-| **Renderer** | `app/workers/renderer.py` | HTTP client for Flash scene generation (`generate_sync`, `get_timepoint`); defaults to `generate_image=true` | Always available |
+| **Renderer** | `app/workers/renderer.py` | HTTP client for Flash scene generation; supports `model_policy` parameter for permissive routing | Always available |
 | **Expander** | `app/workers/expander.py` | LLM-driven autonomous graph growth; picks low-degree frontier nodes and generates related events via OpenRouter | `EXPANSION_ENABLED=true` + `OPENROUTER_API_KEY` |
 | **Judge** | `app/workers/judge.py` | LLM content moderation gate; classifies queries as approve/sensitive/reject via OpenRouter | Used during generation flow |
 | **Daily** | `app/workers/daily.py` | "Today in History" cron; finds date-matching events without Flash scenes and queues generation | `DAILY_CRON_ENABLED=true` |
-| **Image Backfill** | `app/workers/image_backfill.py` | Retroactively generates images for nodes missing `image_url`; batches of 50, layer 2+ priority, max 3 retries per node | `IMAGE_BACKFILL_ENABLED=true` |
+| **Iterator** | `app/workers/iterator.py` | Universal enhancement passes over all nodes; backfills era labels and images with provenance firewall (immutable/backfillable/mutable fields) | Always runs |
 
 ### How the Graph Grows
 
@@ -149,11 +155,11 @@ add_node() → _auto_link()
 sleep 300s → repeat
 ```
 
-The Expander runs on a configurable interval (default 300s). The Daily worker adds a parallel growth path: every 24 hours, events matching today’s date get queued for Flash scene rendering (up to 5 per day).
+The Expander runs on a configurable interval (default 300s). The Daily worker adds a parallel growth path: every 24 hours, events matching today's date get queued for Flash scene rendering (up to 5 per day). The Iterator runs enhancement passes (era backfill, image backfill) every 600s.
 
 ## API Endpoints
 
-Interactive API docs are available at `/docs` (Swagger UI) and `/redoc` (ReDoc). The OpenAPI spec is served at `/openapi.json`.
+Interactive API docs are available at `/docs` (Swagger UI) and `/redoc` (ReDoc). The OpenAPI spec is served at `/openapi.json`. Authenticated endpoints show a lock icon — click "Authorize" in Swagger UI to enter your `X-Service-Key`.
 
 ### Public (no auth required, rate limited)
 
@@ -162,7 +168,7 @@ Interactive API docs are available at `/docs` (Swagger UI) and `/redoc` (ReDoc).
 | `GET` | `/health` | Health check |
 | `GET` | `/api/v1/moments` | Paginated moment list with filters (year range, entity, text search, confidence) |
 | `GET` | `/api/v1/moments/{path}` | Full moment data by canonical URL (public moments; auth unlocks private) |
-| `GET` | `/api/v1/stats` | Enhanced graph statistics (node/edge counts, date range, image coverage) |
+| `GET` | `/api/v1/stats` | Enhanced graph statistics (node/edge counts, model breakdown, image coverage) |
 
 ### Browse and Discovery (auth required)
 
@@ -191,36 +197,43 @@ Interactive API docs are available at `/docs` (Swagger UI) and `/redoc` (ReDoc).
 | `POST` | `/api/v1/index` | Add or update a moment in the graph |
 | `POST` | `/api/v1/expand-once` | Trigger one expansion cycle (requires `OPENROUTER_API_KEY`) |
 | `POST` | `/api/v1/ingest/subgraph` | Bulk-ingest a causal subgraph (nodes + edges) |
-| `POST` | `/api/v1/ingest/tdf` | Ingest a TDF record from sibling services |
+| `POST` | `/api/v1/ingest/tdf` | Ingest TDF records from sibling services |
 
 ## Architecture
 
 ```
 timepoint-clockchain/
 ├── app/
-│   ├── main.py              # FastAPI app, lifespan, health endpoint
+│   ├── main.py              # FastAPI app, lifespan, OpenAPI security, health
 │   ├── api/
 │   │   ├── __init__.py      # API router aggregation
-│   │   ├── moments.py       # /moments, /browse, /today, /random, /search
+│   │   ├── public.py        # /moments (public), /stats (public)
+│   │   ├── moments.py       # /moments (auth), /browse, /today, /random, /search
 │   │   ├── generate.py      # /generate, /jobs, /publish, /bulk-generate, /index
-│   │   └── graph.py         # /graph/neighbors, /stats
+│   │   ├── graph.py         # /graph/neighbors
+│   │   └── ingest.py        # /ingest/subgraph, /ingest/tdf
 │   ├── core/
 │   │   ├── config.py        # Settings (pydantic-settings)
-│   │   ├── auth.py          # Service key + user ID extraction
-│   │   ├── db.py            # asyncpg pool, schema DDL, seeding
+│   │   ├── auth.py          # Service key validation (hmac) + OpenAPI scheme
+│   │   ├── db.py            # asyncpg pool, schema DDL, migrations, seeding
 │   │   ├── graph.py         # PostgreSQL-backed GraphManager (async)
 │   │   ├── url.py           # Canonical temporal URL system
-│   │   └── jobs.py          # In-memory job queue
+│   │   ├── jobs.py          # In-memory job queue + compliance gate
+│   │   ├── tdf_bridge.py    # TDF v1.2.0 ↔ clockchain node conversion
+│   │   ├── model_selector.py # Permissive model resolution via OpenRouter
+│   │   └── rate_limit.py    # slowapi rate limiting
 │   ├── workers/
-│   │   ├── renderer.py      # Flash HTTP client (generate_image=true by default)
-│   │   ├── expander.py      # Autonomous graph expansion (OpenRouter)
+│   │   ├── renderer.py      # Flash HTTP client (model_policy support)
+│   │   ├── expander.py      # Autonomous LLM-driven graph growth loop
+│   │   ├── iterator.py      # Enhancement passes (era backfill, image backfill)
 │   │   ├── judge.py         # LLM content moderation (OpenRouter)
-│   │   ├── daily.py         # "Today in History" daily worker
-│   │   └── image_backfill.py # Retroactive image generation for imageless nodes
+│   │   └── daily.py         # "Today in History" daily worker
 │   └── models/
 │       └── schemas.py       # Pydantic response/request models
 ├── data/
-│   └── seeds.json           # 5 seed historical events
+│   ├── seeds.json           # 5 seed historical events (JSON)
+│   └── seeds.jsonl          # 5 seed historical events (JSONL, preferred)
+├── migrations/              # SQL migration scripts
 ├── scripts/
 │   └── migrate_graph_json.py # One-time migration from graph.json to Postgres
 ├── tests/
@@ -269,8 +282,9 @@ uvicorn app.main:app --port 8080
 On startup, the service:
 1. Creates an asyncpg connection pool
 2. Runs schema DDL (CREATE TABLE IF NOT EXISTS)
-3. Seeds the database from `seeds.json` if the nodes table is empty
-4. Starts the GraphManager, workers, and API server
+3. Runs SQL migrations (schema evolution)
+4. Seeds the database from `seeds.jsonl` if the nodes table is empty
+5. Starts the GraphManager, workers, and API server
 
 ## Environment Variables
 
@@ -284,16 +298,25 @@ On startup, the service:
 | `ENVIRONMENT` | No | `development` | Environment name |
 | `DEBUG` | No | `false` | Enable debug logging |
 | `PORT` | No | `8080` | Server port |
-| `OPENROUTER_API_KEY` | No | | OpenRouter API key (for expander + judge) |
-| `OPENROUTER_MODEL` | No | `google/gemini-2.0-flash-001` | Model for AI workers |
+| `OPENROUTER_API_KEY` | No | | OpenRouter API key (for expander + judge + model selector) |
+| `OPENROUTER_MODEL` | No | | Override model for AI workers (must be permissive) |
 | `EXPANSION_ENABLED` | No | `false` | Enable autonomous graph expansion |
+| `EXPANSION_INTERVAL` | No | `300` | Seconds between expansion cycles |
+| `EXPANSION_CONCURRENCY` | No | `1` | Parallel expansion tasks |
+| `EXPANSION_TARGET` | No | `0` | Target node count (0 = unlimited) |
+| `EXPANSION_DAILY_BUDGET` | No | `5.0` | Daily spending limit (USD) |
 | `DAILY_CRON_ENABLED` | No | `false` | Enable "Today in History" worker |
-| `IMAGE_BACKFILL_ENABLED` | No | `false` | Enable image backfill worker |
-| `IMAGE_BACKFILL_INTERVAL` | No | `600` | Backfill cycle interval in seconds |
 | `ADMIN_KEY` | No | | Key for bulk generation endpoint |
 | `RATE_LIMIT_PUBLIC` | No | `60/minute` | Rate limit for unauthenticated endpoints |
 | `RATE_LIMIT_AUTH_READ` | No | `300/minute` | Rate limit for authenticated reads |
 | `RATE_LIMIT_AUTH_WRITE` | No | `30/minute` | Rate limit for authenticated writes |
+| `CORS_ORIGINS` | No | | Extra CORS origins (comma-separated) |
+
+## Networking
+
+Clockchain is publicly accessible at `clockchain.timepointai.com`. It is also reachable via the API gateway at `api.timepointai.com/api/v1/clockchain/*` (the gateway strips the `clockchain/` prefix).
+
+Service-to-service calls (from Flash, gateway, etc.) use the `X-Service-Key` header. The gateway injects `X-Service-Key`, `X-User-Id`, and `X-User-Email` headers on proxied requests.
 
 ## Testing
 
@@ -304,15 +327,13 @@ createdb clockchain_test
 DATABASE_URL=postgresql://localhost:5432/clockchain_test pytest tests/ -v
 ```
 
-59 tests covering: graph operations, edge auto-linking, API endpoints, health checks, generation/indexing, expander/daily workers, content judge, and URL parsing.
-
 ## Deployment
 
 Deployed on Railway via the [timepoint-clockchain-deploy-private](https://github.com/timepointai/timepoint-clockchain-deploy-private) repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
 
 ## Seed Data
 
-5 initial events loaded from `data/seeds.json` when the database is empty:
+5 initial events loaded from `data/seeds.jsonl` when the database is empty:
 
 1. Assassination of Julius Caesar (-44 BCE)
 2. Trinity Test (1945)
@@ -343,6 +364,7 @@ Open-source engines for temporal AI. Render the past. Simulate the future. Score
 | **iPhone App** | iOS — Synthetic Time Travel on mobile |
 | **Billing** | Apple IAP + Stripe payment processing |
 | **Landing** | Marketing site at `timepointai.com` |
+| **API Gateway** | Stateless reverse proxy at `api.timepointai.com` |
 
 **The Timepoint Thesis** — a forthcoming paper formalizing the Rendered Past / Rendered Future framework, the mathematics of Causal Resolution, the TDF specification, and the Proof of Causal Convergence protocol. Follow [@seanmcdonaldxyz](https://x.com/seanmcdonaldxyz) for updates.
 
