@@ -13,6 +13,7 @@ from app.core.db import create_pool, init_schema, run_migrations, seed_if_empty
 from app.core.multi_writer import bootstrap_tokens
 from app.core.graph import GraphManager
 from app.core.jobs import JobManager
+from app.mcp_server import get_mcp_app, init_mcp
 from app.core.model_selector import ModelSelector
 from app.workers.renderer import FlashClient
 
@@ -41,6 +42,9 @@ async def lifespan(application: FastAPI):
     gm = GraphManager(pool)
     await gm.load()
     application.state.graph_manager = gm
+
+    # Initialize MCP server with shared state
+    init_mcp(gm, pool)
 
     # Job manager
     flash_client = FlashClient(settings.FLASH_URL, settings.FLASH_SERVICE_KEY)
@@ -134,11 +138,19 @@ app = FastAPI(
         {"name": "Generate", "description": "Scene generation, job tracking, publishing"},
         {"name": "Ingest", "description": "Bulk data ingestion (subgraph, TDF)"},
         {"name": "System", "description": "Health checks and service info"},
+        {"name": "MCP", "description": "Model Context Protocol endpoint (Streamable HTTP at /mcp)"},
     ],
     contact={"name": "Sean McDonald", "url": "https://x.com/seanmcdonaldxyz"},
     license_info={"name": "Apache 2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
 )
 app.include_router(api_router)
+
+# Mount MCP server at /mcp (Streamable HTTP transport)
+try:
+    app.mount("/mcp", get_mcp_app())
+    logger.info("MCP server mounted at /mcp")
+except Exception as exc:
+    logger.warning("Failed to mount MCP server: %s", exc)
 
 
 def custom_openapi():
