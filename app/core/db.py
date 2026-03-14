@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     graph_state_hash TEXT DEFAULT '',
     proposed_by TEXT DEFAULT '',
     challenged_by TEXT[] DEFAULT '{}',
-    status TEXT DEFAULT 'proposed' CHECK (status IN ('proposed','challenged','verified','alternative'))
+    status TEXT DEFAULT 'proposed' CHECK (status IN ('proposed','challenged','verified','alternative')),
+    snag_scores JSONB
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -257,6 +258,15 @@ async def run_migrations(pool: asyncpg.Pool):
             await conn.execute("ALTER TABLE nodes ADD COLUMN proposed_by TEXT DEFAULT ''")
             await conn.execute("ALTER TABLE nodes ADD COLUMN challenged_by TEXT[] DEFAULT '{}'")
             logger.info("Migration 006: added proposed_by and challenged_by columns to nodes")
+
+        # 008: SNAG scores column
+        snag_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'snag_scores'"
+        )
+        if not snag_exists:
+            await conn.execute("ALTER TABLE nodes ADD COLUMN snag_scores JSONB")
+            logger.info("Migration 008: added snag_scores column to nodes")
 
 
 async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):

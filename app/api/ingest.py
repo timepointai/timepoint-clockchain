@@ -5,6 +5,7 @@ from app.core.multi_writer import require_write_auth
 from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.rate_limit import limiter
+from app.core.scoring import schedule_scoring
 from app.core.tdf_bridge import tdf_to_node_attrs
 from app.models.schemas import SubgraphIngestRequest, SubgraphIngestResponse
 from timepoint_tdf import TDFRecord
@@ -52,6 +53,16 @@ async def ingest_subgraph(
             generation_id=node.generation_id,
             proposed_by=agent_name,
         )
+        schedule_scoring(gm.pool, node.id, {
+            "name": node.name,
+            "one_liner": node.one_liner,
+            "year": node.year,
+            "country": node.country,
+            "source_type": node.source_type,
+            "proposed_by": agent_name,
+            "tags": list(node.tags or []),
+            "figures": list(node.figures or []),
+        })
         node_count += 1
 
     edge_count = 0
@@ -88,5 +99,15 @@ async def ingest_tdf(
         node_id, attrs = tdf_to_node_attrs(record)
         attrs["proposed_by"] = agent_name
         await gm.add_node(node_id, **attrs)
+        schedule_scoring(gm.pool, node_id, {
+            "name": attrs.get("name", ""),
+            "one_liner": attrs.get("one_liner", ""),
+            "year": attrs.get("year"),
+            "country": attrs.get("country", ""),
+            "source_type": attrs.get("source_type", "historical"),
+            "proposed_by": agent_name,
+            "tags": list(attrs.get("tags") or []),
+            "figures": list(attrs.get("figures") or []),
+        })
         node_count += 1
     return {"ingested_nodes": node_count}

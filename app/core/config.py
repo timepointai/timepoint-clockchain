@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_READ: str = "300/minute"
     RATE_LIMIT_AUTH_WRITE: str = "30/minute"
     CORS_ORIGINS: str = ""
+    SNAG_RUNNER_URL: str = ""
+    SNAG_AUTO_SCORE: bool = False
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.multi_writer import require_admin_auth, require_write_auth
 from app.core.rate_limit import limiter
+from app.core.scoring import schedule_scoring
 from app.models.schemas import (
     ChallengeRequest,
     ChallengeResponse,
@@ -91,6 +92,18 @@ async def propose_moment(
             )
         except ValueError:
             pass  # skip invalid edge types
+
+    # Schedule background SNAG scoring (non-blocking)
+    schedule_scoring(gm.pool, body.id, {
+        "name": body.name,
+        "one_liner": body.one_liner,
+        "year": body.year,
+        "country": body.country,
+        "source_type": body.source_type,
+        "proposed_by": agent_name,
+        "tags": body.tags,
+        "figures": body.figures,
+    })
 
     return ProposeResponse(
         path=body.id,
@@ -206,6 +219,18 @@ async def challenge_moment(
         status="challenged",
         challenged_by=challenged_by,
     )
+
+    # Schedule background SNAG scoring for the competing moment (non-blocking)
+    schedule_scoring(gm.pool, competing.id, {
+        "name": competing.name,
+        "one_liner": competing.one_liner,
+        "year": competing.year,
+        "country": competing.country,
+        "source_type": competing.source_type,
+        "proposed_by": agent_name,
+        "tags": competing.tags,
+        "figures": competing.figures,
+    })
 
     return ChallengeResponse(
         original_moment_id=full_path,

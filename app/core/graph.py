@@ -28,6 +28,7 @@ NODE_COLUMNS = [
     "model_provider", "model_permissiveness",
     "generation_id", "graph_state_hash",
     "proposed_by", "challenged_by", "status",
+    "snag_scores",
 ]
 
 
@@ -46,6 +47,7 @@ def _parse_dt(val) -> datetime | None:
 
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
+    import json as _json
     d = dict(row)
     d["path"] = d.pop("id")
     # Convert list-like columns
@@ -56,6 +58,14 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
     for col in ("created_at", "published_at"):
         if col in d:
             d[col] = d[col].isoformat() if d[col] is not None else ""
+    # JSONB columns — asyncpg may return as string or dict
+    if "snag_scores" in d and d["snag_scores"] is not None:
+        val = d["snag_scores"]
+        if isinstance(val, str):
+            try:
+                d["snag_scores"] = _json.loads(val)
+            except (ValueError, TypeError):
+                d["snag_scores"] = None
     return d
 
 
@@ -443,6 +453,7 @@ class GraphManager:
         min_confidence: float | None = None,
         sort: str = "year",
         status: str | None = None,
+        min_score: float | None = None,
     ) -> tuple[list[dict], int]:
         conditions = ["visibility = 'public'"]
         params: list = []
@@ -471,8 +482,34 @@ class GraphManager:
             conditions.append(f"status = ${idx}")
             params.append(status)
             idx += 1
+        if min_score is not None:
+            # Filter by aggregate SNAG score: mean of all 5 axes stored in snag_scores JSONB
+            conditions.append(
+                f"snag_scores IS NOT NULL AND ("
+                f"  COALESCE((snag_scores->>'GSR')::float, 0)"
+                f"  + COALESCE((snag_scores->>'TCS')::float, 0)"
+                f"  + COALESCE((snag_scores->>'WMNED')::float, 0)"
+                f"  + COALESCE((snag_scores->>'GCQ')::float, 0)"
+                f"  + COALESCE((snag_scores->>'HTP')::float, 0)"
+                f") / 5.0 >= ${idx}"
+            )
+            params.append(min_score)
+            idx += 1
         where = " AND ".join(conditions)
-        order = "year ASC" if sort == "year" else "created_at DESC"
+        if sort == "snag_score":
+            order = (
+                "("
+                "  COALESCE((snag_scores->>'GSR')::float, 0)"
+                "  + COALESCE((snag_scores->>'TCS')::float, 0)"
+                "  + COALESCE((snag_scores->>'WMNED')::float, 0)"
+                "  + COALESCE((snag_scores->>'GCQ')::float, 0)"
+                "  + COALESCE((snag_scores->>'HTP')::float, 0)"
+                ") / 5.0 DESC NULLS LAST"
+            )
+        elif sort == "year":
+            order = "year ASC"
+        else:
+            order = "created_at DESC"
         async with self.pool.acquire() as conn:
             total = await conn.fetchval(
                 f"SELECT count(*) FROM nodes WHERE {where}", *params
