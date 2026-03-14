@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     SERVICE_API_KEY: str = ""
-    FLASH_URL: str = ""
+    FLASH_URL: str = "https://flash.timepointai.com"
     FLASH_SERVICE_KEY: str = ""
     DATA_DIR: str = "./data"
     ENVIRONMENT: str = "development"
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     DAILY_CRON_ENABLED: bool = False
     DATABASE_URL: str = ""
     ADMIN_KEY: str = ""
+    ADMIN_TOKEN: str = ""
+    WRITER_TOKENS: str = ""
     RATE_LIMIT_PUBLIC: str = "60/minute"
     RATE_LIMIT_AUTH_READ: str = "300/minute"
     RATE_LIMIT_AUTH_WRITE: str = "30/minute"

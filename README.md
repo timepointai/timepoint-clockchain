@@ -211,10 +211,12 @@ timepoint-clockchain/
 │   │   ├── moments.py       # /moments (auth), /browse, /today, /random, /search
 │   │   ├── generate.py      # /generate, /jobs, /publish, /bulk-generate, /index
 │   │   ├── graph.py         # /graph/neighbors
-│   │   └── ingest.py        # /ingest/subgraph, /ingest/tdf
+│   │   ├── ingest.py        # /ingest/subgraph, /ingest/tdf
+│   │   └── agents.py        # /agents/register, /agents, /agents/{id} (multi-writer)
 │   ├── core/
 │   │   ├── config.py        # Settings (pydantic-settings)
 │   │   ├── auth.py          # Service key validation (hmac) + OpenAPI scheme
+│   │   ├── multi_writer.py  # Multi-writer token auth, agent identity
 │   │   ├── db.py            # asyncpg pool, schema DDL, migrations, seeding
 │   │   ├── graph.py         # PostgreSQL-backed GraphManager (async)
 │   │   ├── url.py           # Canonical temporal URL system
@@ -292,7 +294,7 @@ On startup, the service:
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | | PostgreSQL connection URL |
 | `SERVICE_API_KEY` | Yes | | Shared secret for inbound service auth |
-| `FLASH_URL` | No | | Flash service URL |
+| `FLASH_URL` | No | `https://flash.timepointai.com` | Flash service URL |
 | `FLASH_SERVICE_KEY` | Yes | | Auth key for Flash API calls |
 | `DATA_DIR` | No | `./data` | Directory for seed data |
 | `ENVIRONMENT` | No | `development` | Environment name |
@@ -307,10 +309,61 @@ On startup, the service:
 | `EXPANSION_DAILY_BUDGET` | No | `5.0` | Daily spending limit (USD) |
 | `DAILY_CRON_ENABLED` | No | `false` | Enable "Today in History" worker |
 | `ADMIN_KEY` | No | | Key for bulk generation endpoint |
+| `ADMIN_TOKEN` | No | | Admin Bearer token for multi-writer agent management |
+| `WRITER_TOKENS` | No | | Comma-separated `token:agent_name` pairs for bootstrap |
 | `RATE_LIMIT_PUBLIC` | No | `60/minute` | Rate limit for unauthenticated endpoints |
 | `RATE_LIMIT_AUTH_READ` | No | `300/minute` | Rate limit for authenticated reads |
 | `RATE_LIMIT_AUTH_WRITE` | No | `30/minute` | Rate limit for authenticated writes |
 | `CORS_ORIGINS` | No | | Extra CORS origins (comma-separated) |
+
+## Multi-Writer Auth
+
+Clockchain supports multi-writer mode where multiple agents can propose and challenge moments. When enabled, write operations require a Bearer token in the `Authorization` header.
+
+### Configuration
+
+Set `ADMIN_TOKEN` and/or `WRITER_TOKENS` to enable multi-writer auth:
+
+```bash
+# Admin token — can register/revoke agents
+ADMIN_TOKEN=your-admin-secret
+
+# Bootstrap writer tokens — comma-separated token:name pairs
+WRITER_TOKENS=tok1:agent-alpha,tok2:agent-beta
+```
+
+When neither is set, auth is disabled and the system operates in legacy single-writer mode (backward compatible).
+
+### Agent Management Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/agents/register` | Register a new agent (admin-only), returns token |
+| `GET` | `/api/v1/agents` | List registered agents (admin-only) |
+| `DELETE` | `/api/v1/agents/{agent_id}` | Revoke an agent's access (admin-only) |
+
+### Agent Identity Tracking
+
+When multi-writer auth is enabled, moments track which agent proposed them:
+- `proposed_by` — set automatically from the authenticated agent's identity
+- `challenged_by` — list of agent identities that challenged this moment
+
+### Usage
+
+```bash
+# Register a new agent (admin)
+curl -X POST https://clockchain.example.com/api/v1/agents/register \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_name": "my-agent", "permissions": "write"}'
+
+# Use the returned token for write operations
+curl -X POST https://clockchain.example.com/api/v1/index \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "X-Service-Key: $SERVICE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/1945/august/6/1200/japan/hiroshima/hiroshima/test", "metadata": {}}'
+```
 
 ## Networking
 
@@ -329,7 +382,7 @@ DATABASE_URL=postgresql://localhost:5432/clockchain_test pytest tests/ -v
 
 ## Deployment
 
-Deployed on Railway. See the deploy repo for Railway configuration, entrypoint behavior, and production environment details.
+Deployed on Railway via a private deploy repo. See that repo for Railway configuration, entrypoint behavior, and production environment details.
 
 ## Seed Data
 

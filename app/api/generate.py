@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from app.core.auth import verify_service_key, get_user_id
+from app.core.multi_writer import require_write_auth
 from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.jobs import JobManager
@@ -30,6 +31,7 @@ async def generate_moment(
     background_tasks: BackgroundTasks,
     jm: JobManager = Depends(get_job_manager),
     user_id: str | None = Depends(get_user_id),
+    agent: dict = Depends(require_write_auth),
 ):
     # Content judge (Phase 5) — if available
     try:
@@ -54,6 +56,7 @@ async def generate_moment(
         preset=body.preset,
         user_id=user_id,
         visibility=body.visibility,
+        proposed_by=agent.get("agent_name", ""),
     )
     background_tasks.add_task(jm.process_job, job)
     return job.to_dict()
@@ -80,6 +83,7 @@ async def publish_moment(
     body: PublishRequest = PublishRequest(),
     gm: GraphManager = Depends(get_graph_manager),
     user_id: str | None = Depends(get_user_id),
+    agent: dict = Depends(require_write_auth),
 ):
     from datetime import datetime, timezone
 
@@ -157,6 +161,7 @@ async def index_moment(
     request: Request,
     body: dict,
     gm: GraphManager = Depends(get_graph_manager),
+    agent: dict = Depends(require_write_auth),
 ):
     path = body.get("path")
     if not path:
@@ -170,6 +175,7 @@ async def index_moment(
         "type": "event",
         "visibility": visibility,
         "created_by": created_by,
+        "proposed_by": agent.get("agent_name", ""),
         **metadata,
     }
     if flash_id:
