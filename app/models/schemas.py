@@ -56,6 +56,7 @@ class MomentResponse(BaseModel):
     proposed_by: str = ""
     challenged_by: list[str] = Field(default_factory=list)
     status: str = "proposed"
+    snag_scores: dict | None = None
     edges: list[EdgeResponse] = Field(default_factory=list)
 
 
@@ -103,6 +104,7 @@ class MomentListItem(BaseModel):
     text_model: str = ""
     image_model: str = ""
     status: str = "proposed"
+    snag_scores: dict | None = None
 
 
 class PaginatedMomentsResponse(BaseModel):

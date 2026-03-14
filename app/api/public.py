@@ -41,8 +41,9 @@ async def list_moments(
     entity: str | None = Query(default=None),
     q: str | None = Query(default=None),
     min_confidence: float | None = Query(default=None),
-    sort: str = Query(default="year"),
+    sort: str = Query(default="year", description="Sort order: year, recent, snag_score"),
     status: str | None = Query(default=None, description="Filter by moment status"),
+    min_score: float | None = Query(default=None, ge=0.0, le=1.0, description="Minimum aggregate SNAG score (0.0-1.0)"),
     gm: GraphManager = Depends(get_graph_manager),
     service_key: str | None = Depends(optional_verify_service_key),
 ):
@@ -56,6 +57,7 @@ async def list_moments(
         min_confidence=min_confidence,
         sort=sort,
         status=status,
+        min_score=min_score,
     )
     return PaginatedMomentsResponse(
         items=[
@@ -72,6 +74,7 @@ async def list_moments(
                 source_type=i.get("source_type", "historical"),
                 confidence=i.get("confidence"),
                 status=i.get("status", "proposed"),
+                snag_scores=i.get("snag_scores"),
             )
             for i in items
         ],
