@@ -8,7 +8,7 @@ logger = logging.getLogger("clockchain.model_selector")
 
 OPENROUTER_FRONTEND_URL = "https://openrouter.ai/api/frontend/models"
 
-ALLOWED_PROVIDERS = {"deepseek", "qwen", "meta-llama", "mistralai", "nvidia", "stabilityai"}
+ALLOWED_PROVIDERS = {"deepseek", "qwen", "meta-llama", "mistralai", "nvidia", "nousresearch", "stabilityai"}
 BLOCKED_PROVIDERS = {"google", "anthropic", "openai"}
 
 FALLBACK_CHAIN = [
