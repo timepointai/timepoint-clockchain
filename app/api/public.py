@@ -42,6 +42,7 @@ async def list_moments(
     q: str | None = Query(default=None),
     min_confidence: float | None = Query(default=None),
     sort: str = Query(default="year"),
+    status: str | None = Query(default=None, description="Filter by moment status"),
     gm: GraphManager = Depends(get_graph_manager),
     service_key: str | None = Depends(optional_verify_service_key),
 ):
@@ -54,6 +55,7 @@ async def list_moments(
         query=q,
         min_confidence=min_confidence,
         sort=sort,
+        status=status,
     )
     return PaginatedMomentsResponse(
         items=[
@@ -69,6 +71,7 @@ async def list_moments(
                 city=i.get("city", ""),
                 source_type=i.get("source_type", "historical"),
                 confidence=i.get("confidence"),
+                status=i.get("status", "proposed"),
             )
             for i in items
         ],

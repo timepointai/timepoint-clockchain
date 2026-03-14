@@ -48,13 +48,14 @@ CREATE TABLE IF NOT EXISTS nodes (
     generation_id TEXT DEFAULT '',
     graph_state_hash TEXT DEFAULT '',
     proposed_by TEXT DEFAULT '',
-    challenged_by TEXT[] DEFAULT '{}'
+    challenged_by TEXT[] DEFAULT '{}',
+    status TEXT DEFAULT 'proposed' CHECK (status IN ('proposed','challenged','verified','alternative'))
 );
 
 CREATE TABLE IF NOT EXISTS edges (
     source TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     target TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('causes','caused_by','influences','contemporaneous','same_era','same_location','same_conflict','same_figure','thematic','precedes','follows')),
+    type TEXT NOT NULL CHECK (type IN ('causes','caused_by','influences','contemporaneous','same_era','same_location','same_conflict','same_figure','thematic','precedes','follows','challenges')),
     weight FLOAT DEFAULT 1.0,
     theme TEXT DEFAULT '',
     description TEXT DEFAULT '',
@@ -85,6 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_figures ON nodes USING GIN(figures);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_nodes_source_type ON nodes(source_type);
+CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
 """
 
 TRGM_DDL = """
@@ -204,6 +206,47 @@ async def run_migrations(pool: asyncpg.Pool):
             await conn.execute("ALTER TABLE nodes ADD COLUMN graph_state_hash TEXT DEFAULT ''")
             await conn.execute("ALTER TABLE edges ADD COLUMN schema_version TEXT DEFAULT '0.1'")
             logger.info("Migration 005: added schema versioning and model provenance columns")
+
+        # 007: moment status column for propose/challenge protocol
+        status_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'status'"
+        )
+        if not status_exists:
+            await conn.execute(
+                "ALTER TABLE nodes ADD COLUMN status TEXT DEFAULT 'proposed' "
+                "CHECK (status IN ('proposed','challenged','verified','alternative'))"
+            )
+            # Existing moments are pre-existing truth — mark as verified
+            await conn.execute("UPDATE nodes SET status = 'verified'")
+            logger.info("Migration 007: added status column, existing moments set to verified")
+
+        # 007b: add 'challenges' to edge type CHECK constraint
+        constraint_def_007 = await conn.fetchval("""
+            SELECT pg_get_constraintdef(oid) FROM pg_constraint
+            WHERE conrelid = 'edges'::regclass
+              AND contype = 'c'
+              AND pg_get_constraintdef(oid) LIKE '%type%'
+        """)
+        if constraint_def_007 and "challenges" not in (constraint_def_007 or ""):
+            try:
+                old_name_007 = await conn.fetchval("""
+                    SELECT conname FROM pg_constraint
+                    WHERE conrelid = 'edges'::regclass
+                      AND contype = 'c'
+                      AND pg_get_constraintdef(oid) LIKE '%type%'
+                """)
+                if old_name_007:
+                    await conn.execute(f"ALTER TABLE edges DROP CONSTRAINT {old_name_007}")
+                await conn.execute("""
+                    ALTER TABLE edges ADD CONSTRAINT edges_type_check
+                    CHECK (type IN ('causes','caused_by','influences','contemporaneous','same_era',
+                                    'same_location','same_conflict','same_figure','thematic',
+                                    'precedes','follows','challenges'))
+                """)
+                logger.info("Migration 007b: added 'challenges' edge type to CHECK constraint")
+            except Exception as e:
+                logger.warning("Migration 007b: could not update CHECK constraint: %s", e)
 
         # 006: multi-writer agent identity columns on nodes
         proposed_by_exists = await conn.fetchval(
