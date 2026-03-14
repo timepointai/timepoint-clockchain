@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS nodes (
     model_provider TEXT DEFAULT '',
     model_permissiveness TEXT DEFAULT 'unknown',
     generation_id TEXT DEFAULT '',
-    graph_state_hash TEXT DEFAULT ''
+    graph_state_hash TEXT DEFAULT '',
+    proposed_by TEXT DEFAULT '',
+    challenged_by TEXT[] DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -59,6 +61,17 @@ CREATE TABLE IF NOT EXISTS edges (
     created_by TEXT DEFAULT 'auto',
     schema_version TEXT DEFAULT '0.1',
     PRIMARY KEY (source, target, type)
+);
+"""
+
+AGENT_TOKENS_DDL = """
+CREATE TABLE IF NOT EXISTS agent_tokens (
+    id SERIAL PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    agent_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    is_active BOOLEAN DEFAULT TRUE,
+    permissions TEXT DEFAULT 'write' CHECK (permissions IN ('read', 'write', 'admin'))
 );
 """
 
@@ -105,6 +118,7 @@ async def create_pool(database_url: str) -> asyncpg.Pool:
 async def init_schema(pool: asyncpg.Pool):
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA_DDL)
+        await conn.execute(AGENT_TOKENS_DDL)
         await conn.execute(INDEX_DDL)
         try:
             await conn.execute(TRGM_DDL)
@@ -190,6 +204,16 @@ async def run_migrations(pool: asyncpg.Pool):
             await conn.execute("ALTER TABLE nodes ADD COLUMN graph_state_hash TEXT DEFAULT ''")
             await conn.execute("ALTER TABLE edges ADD COLUMN schema_version TEXT DEFAULT '0.1'")
             logger.info("Migration 005: added schema versioning and model provenance columns")
+
+        # 006: multi-writer agent identity columns on nodes
+        proposed_by_exists = await conn.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'nodes' AND column_name = 'proposed_by'"
+        )
+        if not proposed_by_exists:
+            await conn.execute("ALTER TABLE nodes ADD COLUMN proposed_by TEXT DEFAULT ''")
+            await conn.execute("ALTER TABLE nodes ADD COLUMN challenged_by TEXT[] DEFAULT '{}'")
+            logger.info("Migration 006: added proposed_by and challenged_by columns to nodes")
 
 
 async def seed_if_empty(pool: asyncpg.Pool, data_dir: str):

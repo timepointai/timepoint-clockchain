@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from app.api import api_router
 from app.core.config import get_settings
 from app.core.db import create_pool, init_schema, run_migrations, seed_if_empty
+from app.core.multi_writer import bootstrap_tokens
 from app.core.graph import GraphManager
 from app.core.jobs import JobManager
 from app.core.model_selector import ModelSelector
@@ -32,6 +33,9 @@ async def lifespan(application: FastAPI):
     await init_schema(pool)
     await run_migrations(pool)
     await seed_if_empty(pool, settings.DATA_DIR)
+
+    # Bootstrap multi-writer agent tokens from env
+    await bootstrap_tokens(pool)
 
     # Graph manager
     gm = GraphManager(pool)
@@ -158,7 +162,15 @@ def custom_openapi():
                 "Service authentication key. Required for all endpoints "
                 "except Public (read-only) and System."
             ),
-        }
+        },
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "description": (
+                "Agent Bearer token for multi-writer operations. "
+                "Required for write endpoints when multi-writer auth is enabled."
+            ),
+        },
     }
     # Apply security globally — Public endpoints override with empty security
     schema["security"] = [{"ServiceKey": []}]
@@ -188,7 +200,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

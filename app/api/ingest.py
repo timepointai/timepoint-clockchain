@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 
 from app.core.auth import verify_service_key
+from app.core.multi_writer import require_write_auth
 from app.core.config import get_settings
 from app.core.graph import GraphManager, get_graph_manager
 from app.core.rate_limit import limiter
@@ -17,7 +18,9 @@ async def ingest_subgraph(
     request: Request,
     body: SubgraphIngestRequest,
     gm: GraphManager = Depends(get_graph_manager),
+    agent: dict = Depends(require_write_auth),
 ):
+    agent_name = agent.get("agent_name", "")
     node_count = 0
     for node in body.nodes:
         await gm.add_node(
@@ -47,6 +50,7 @@ async def ingest_subgraph(
             model_provider=node.model_provider,
             model_permissiveness=node.model_permissiveness,
             generation_id=node.generation_id,
+            proposed_by=agent_name,
         )
         node_count += 1
 
@@ -75,11 +79,14 @@ async def ingest_tdf(
     request: Request,
     records: list[dict],
     gm: GraphManager = Depends(get_graph_manager),
+    agent: dict = Depends(require_write_auth),
 ):
+    agent_name = agent.get("agent_name", "")
     node_count = 0
     for raw in records:
         record = TDFRecord(**raw)
         node_id, attrs = tdf_to_node_attrs(record)
+        attrs["proposed_by"] = agent_name
         await gm.add_node(node_id, **attrs)
         node_count += 1
     return {"ingested_nodes": node_count}
