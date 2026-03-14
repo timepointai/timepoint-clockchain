@@ -14,7 +14,7 @@ logger = logging.getLogger("clockchain.graph")
 VALID_EDGE_TYPES = {
     "causes", "caused_by", "influences", "contemporaneous", "same_era",
     "same_location", "same_conflict", "same_figure", "thematic",
-    "precedes", "follows",
+    "precedes", "follows", "challenges",
 }
 
 NODE_COLUMNS = [
@@ -27,7 +27,7 @@ NODE_COLUMNS = [
     "schema_version", "text_model", "image_model",
     "model_provider", "model_permissiveness",
     "generation_id", "graph_state_hash",
-    "proposed_by", "challenged_by",
+    "proposed_by", "challenged_by", "status",
 ]
 
 
@@ -126,7 +126,7 @@ class GraphManager:
                     schema_version, text_model, image_model,
                     model_provider, model_permissiveness,
                     generation_id, graph_state_hash,
-                    proposed_by, challenged_by
+                    proposed_by, challenged_by, status
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
@@ -137,7 +137,7 @@ class GraphManager:
                     $29, $30, $31,
                     $32, $33,
                     $34, $35,
-                    $36, $37
+                    $36, $37, $38
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -212,6 +212,7 @@ class GraphManager:
                 attrs.get("graph_state_hash", ""),
                 attrs.get("proposed_by", ""),
                 challenged_by,
+                attrs.get("status", "proposed"),
             )
         await self._auto_link(node_id)
 
@@ -441,6 +442,7 @@ class GraphManager:
         query: str | None = None,
         min_confidence: float | None = None,
         sort: str = "year",
+        status: str | None = None,
     ) -> tuple[list[dict], int]:
         conditions = ["visibility = 'public'"]
         params: list = []
@@ -464,6 +466,10 @@ class GraphManager:
         if min_confidence is not None:
             conditions.append(f"confidence >= ${idx}")
             params.append(min_confidence)
+            idx += 1
+        if status is not None:
+            conditions.append(f"status = ${idx}")
+            params.append(status)
             idx += 1
         where = " AND ".join(conditions)
         order = "year ASC" if sort == "year" else "created_at DESC"
@@ -735,6 +741,97 @@ class GraphManager:
                     """,
                     node_id, node_tags,
                 )
+
+
+    async def list_moments_by_status(
+        self,
+        status: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """List moments filtered by status."""
+        async with self.pool.acquire() as conn:
+            total = await conn.fetchval(
+                "SELECT count(*) FROM nodes WHERE status = $1", status
+            )
+            rows = await conn.fetch(
+                "SELECT * FROM nodes WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                status, limit, offset,
+            )
+        return [_row_to_dict(row) for row in rows], total
+
+    async def get_challenges(self, node_id: str) -> list[dict]:
+        """Get all moments that challenge a given moment (via challenges edges)."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT n.* FROM nodes n
+                JOIN edges e ON e.source = n.id
+                WHERE e.target = $1 AND e.type = 'challenges'
+                ORDER BY n.created_at DESC
+                """,
+                node_id,
+            )
+        return [_row_to_dict(row) for row in rows]
+
+    async def get_moment_history(self, node_id: str) -> list[dict]:
+        """Build the propose/challenge/verify history for a moment.
+
+        Returns a list of history entries derived from the moment's metadata
+        and challenge edges.
+        """
+        history = []
+        async with self.pool.acquire() as conn:
+            node = await conn.fetchrow("SELECT * FROM nodes WHERE id = $1", node_id)
+            if node is None:
+                return []
+
+            # Proposed event
+            proposed_by = node["proposed_by"] or ""
+            created_at = node["created_at"]
+            history.append({
+                "action": "proposed",
+                "agent": proposed_by,
+                "timestamp": created_at.isoformat() if created_at else "",
+                "details": f"Proposed by {proposed_by}" if proposed_by else "Proposed",
+            })
+
+            # Challenge events — moments that challenge this one
+            challengers = await conn.fetch(
+                """
+                SELECT n.id, n.proposed_by, n.created_at, e.description
+                FROM nodes n
+                JOIN edges e ON e.source = n.id
+                WHERE e.target = $1 AND e.type = 'challenges'
+                ORDER BY n.created_at ASC
+                """,
+                node_id,
+            )
+            for ch in challengers:
+                agent = ch["proposed_by"] or ""
+                ts = ch["created_at"]
+                history.append({
+                    "action": "challenged",
+                    "agent": agent,
+                    "timestamp": ts.isoformat() if ts else "",
+                    "details": ch["description"] or f"Challenged by {agent}",
+                })
+
+            # If verified or alternative, record that
+            status = node["status"]
+            if status in ("verified", "alternative"):
+                # We record the challenged_by list for context
+                challenged_by = list(node["challenged_by"]) if node["challenged_by"] else []
+                history.append({
+                    "action": status,
+                    "agent": "",
+                    "timestamp": "",
+                    "details": f"Status set to {status}" + (
+                        f" (challenged by: {', '.join(challenged_by)})" if challenged_by else ""
+                    ),
+                })
+
+        return history
 
 
 async def get_graph_manager(request: Request) -> GraphManager:

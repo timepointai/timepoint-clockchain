@@ -55,6 +55,7 @@ class MomentResponse(BaseModel):
     generation_id: str = ""
     proposed_by: str = ""
     challenged_by: list[str] = Field(default_factory=list)
+    status: str = "proposed"
     edges: list[EdgeResponse] = Field(default_factory=list)
 
 
@@ -101,6 +102,7 @@ class MomentListItem(BaseModel):
     schema_version: str = "0.1"
     text_model: str = ""
     image_model: str = ""
+    status: str = "proposed"
 
 
 class PaginatedMomentsResponse(BaseModel):
@@ -223,3 +225,96 @@ class AgentInfo(BaseModel):
 class AgentListResponse(BaseModel):
     agents: list[AgentInfo] = Field(default_factory=list)
     total: int = 0
+
+
+# --- Propose/Challenge protocol schemas ---
+
+VALID_MOMENT_STATUSES = {"proposed", "challenged", "verified", "alternative"}
+
+
+class ProposeRequest(BaseModel):
+    """Submit a new moment for consideration."""
+    id: str = Field(..., description="Spatiotemporal path ID for the moment")
+    name: str = ""
+    one_liner: str = ""
+    year: int | None = None
+    month: str = ""
+    month_num: int = 0
+    day: int = 0
+    time: str = ""
+    country: str = ""
+    region: str = ""
+    city: str = ""
+    slug: str = ""
+    layer: int = 0
+    visibility: str = "public"
+    tags: list[str] = Field(default_factory=list)
+    figures: list[str] = Field(default_factory=list)
+    source_type: str = "historical"
+    confidence: float | None = None
+    source_run_id: str | None = None
+    schema_version: str = "0.2"
+    text_model: str = ""
+    image_model: str = ""
+    model_provider: str = ""
+    model_permissiveness: str = "unknown"
+    generation_id: str = ""
+    edges: list[SubgraphEdgeInput] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list, description="Evidence/source URLs")
+
+
+class ProposeResponse(BaseModel):
+    path: str
+    name: str
+    status: str = "proposed"
+    proposed_by: str = ""
+
+
+class ChallengeRequest(BaseModel):
+    """Dispute an existing moment with a competing version."""
+    competing_moment: ProposeRequest = Field(
+        ..., description="The challenger's alternative version"
+    )
+    reason: str = Field("", description="Reason for the challenge")
+
+
+class ChallengeResponse(BaseModel):
+    original_moment_id: str
+    original_status: str = "challenged"
+    competing_moment_id: str
+    competing_status: str = "proposed"
+    challenged_by: str = ""
+
+
+class VerifyResponse(BaseModel):
+    moment_id: str
+    status: str = "verified"
+    verified_by: str = ""
+
+
+class ReconcileRequest(BaseModel):
+    """Resolve two competing moments — pick a winner."""
+    winner_id: str
+    loser_id: str
+    reason: str = ""
+
+
+class ReconcileResponse(BaseModel):
+    winner_id: str
+    winner_status: str = "verified"
+    loser_id: str
+    loser_status: str = "alternative"
+    reconciled_by: str = ""
+
+
+class MomentHistoryEntry(BaseModel):
+    action: str  # proposed, challenged, verified, reconciled
+    agent: str = ""
+    timestamp: str = ""
+    details: str = ""
+
+
+class MomentHistoryResponse(BaseModel):
+    moment_id: str
+    status: str = ""
+    history: list[MomentHistoryEntry] = Field(default_factory=list)
