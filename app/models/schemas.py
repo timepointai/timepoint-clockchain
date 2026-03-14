@@ -53,6 +53,8 @@ class MomentResponse(BaseModel):
     model_provider: str = ""
     model_permissiveness: str = "unknown"
     generation_id: str = ""
+    proposed_by: str = ""
+    challenged_by: list[str] = Field(default_factory=list)
     edges: list[EdgeResponse] = Field(default_factory=list)
 
 
@@ -193,3 +195,31 @@ class SubgraphIngestRequest(BaseModel):
 class SubgraphIngestResponse(BaseModel):
     ingested_nodes: int = 0
     ingested_edges: int = 0
+
+
+# --- Agent / Multi-Writer schemas ---
+
+
+class AgentRegisterRequest(BaseModel):
+    agent_name: str
+    permissions: str = "write"
+
+
+class AgentRegisterResponse(BaseModel):
+    agent_id: int
+    agent_name: str
+    token: str
+    permissions: str = "write"
+
+
+class AgentInfo(BaseModel):
+    agent_id: int
+    agent_name: str
+    permissions: str = "write"
+    is_active: bool = True
+    created_at: str = ""
+
+
+class AgentListResponse(BaseModel):
+    agents: list[AgentInfo] = Field(default_factory=list)
+    total: int = 0

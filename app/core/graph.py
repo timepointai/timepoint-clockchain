@@ -27,6 +27,7 @@ NODE_COLUMNS = [
     "schema_version", "text_model", "image_model",
     "model_provider", "model_permissiveness",
     "generation_id", "graph_state_hash",
+    "proposed_by", "challenged_by",
 ]
 
 
@@ -48,7 +49,7 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
     d = dict(row)
     d["path"] = d.pop("id")
     # Convert list-like columns
-    for col in ("tags", "figures"):
+    for col in ("tags", "figures", "challenged_by"):
         if col in d and d[col] is not None:
             d[col] = list(d[col])
     # Stringify datetimes for JSON compat
@@ -109,6 +110,10 @@ class GraphManager:
             if not isinstance(figures, list):
                 figures = []
 
+            challenged_by = attrs.get("challenged_by", [])
+            if not isinstance(challenged_by, list):
+                challenged_by = []
+
             await conn.execute(
                 """
                 INSERT INTO nodes (
@@ -120,7 +125,8 @@ class GraphManager:
                     created_at, source_type, confidence, source_run_id, tdf_hash,
                     schema_version, text_model, image_model,
                     model_provider, model_permissiveness,
-                    generation_id, graph_state_hash
+                    generation_id, graph_state_hash,
+                    proposed_by, challenged_by
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
                     $9, $10, $11, $12, $13, $14,
@@ -130,7 +136,8 @@ class GraphManager:
                     $24, $25, $26, $27, $28,
                     $29, $30, $31,
                     $32, $33,
-                    $34, $35
+                    $34, $35,
+                    $36, $37
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     type = EXCLUDED.type,
@@ -165,7 +172,8 @@ class GraphManager:
                     model_provider = EXCLUDED.model_provider,
                     model_permissiveness = EXCLUDED.model_permissiveness,
                     generation_id = EXCLUDED.generation_id,
-                    graph_state_hash = EXCLUDED.graph_state_hash
+                    graph_state_hash = EXCLUDED.graph_state_hash,
+                    proposed_by = EXCLUDED.proposed_by
                 """,
                 node_id,
                 attrs.get("type", "event"),
@@ -202,6 +210,8 @@ class GraphManager:
                 attrs.get("model_permissiveness", "unknown"),
                 attrs.get("generation_id", ""),
                 attrs.get("graph_state_hash", ""),
+                attrs.get("proposed_by", ""),
+                challenged_by,
             )
         await self._auto_link(node_id)
 

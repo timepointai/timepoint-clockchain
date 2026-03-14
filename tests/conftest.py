@@ -42,13 +42,15 @@ def _set_data_dir(tmp_path):
 async def _init_and_truncate():
     """Ensure schema exists and truncate tables before each test."""
     import asyncpg
-    from app.core.db import SCHEMA_DDL
+    from app.core.db import SCHEMA_DDL, AGENT_TOKENS_DDL
 
     url = os.environ["DATABASE_URL"]
     conn = await asyncpg.connect(url)
     try:
         await conn.execute(SCHEMA_DDL)
+        await conn.execute(AGENT_TOKENS_DDL)
         await conn.execute("TRUNCATE edges, nodes CASCADE")
+        await conn.execute("TRUNCATE agent_tokens RESTART IDENTITY CASCADE")
     finally:
         await conn.close()
     yield

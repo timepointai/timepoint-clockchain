@@ -75,6 +75,7 @@ class Job:
     user_id: str | None = None
     visibility: str = "private"
     override_name: str | None = None
+    proposed_by: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -101,6 +102,7 @@ class JobManager:
         user_id: str | None = None,
         visibility: str = "private",
         override_name: str | None = None,
+        proposed_by: str = "",
     ) -> Job:
         job = Job(
             id=str(uuid.uuid4()),
@@ -109,6 +111,7 @@ class JobManager:
             user_id=user_id,
             visibility=visibility,
             override_name=override_name,
+            proposed_by=proposed_by,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         self.jobs[job.id] = job
@@ -237,6 +240,7 @@ class JobManager:
                 model_provider=model_provider,
                 model_permissiveness=model_permissiveness or "unknown",
                 generation_id=flash_id or job.id,
+                proposed_by=job.proposed_by,
             )
 
             job.path = path
